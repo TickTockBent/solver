@@ -17,10 +17,11 @@ Phase 0 tests the smallest version of that bet on the friendliest class —
 |-----------|-------|
 | Held-Karp exact solver + brute-force oracle (`data/held_karp.py`) | **implemented** |
 | Instance generation, parallel + reproducible (`data/generate.py`) | **implemented** |
-| Dataset readers (`data/dataset.py`) | **implemented** (torch wrapper lazy) |
-| Model (encoder / decoder) | stub |
-| Training loop, curriculum, evaluation | stub |
-| Cross-level analysis, plotting | stub |
+| Data pool + mixed-n padded collation (`data/dataset.py`) | **implemented** |
+| Model — encoder, decoder, wrapper (`model/`) | **implemented** (overfits real tours to 100%) |
+| Curriculum, training loop, evaluation (`training/`) | **implemented** |
+| Accuracy-by-level plot (`analysis/plot.py`) | **implemented** |
+| Cross-level reinforcement experiment (`analysis/cross_level.py`) | stub (next) |
 
 ## Setup
 
@@ -63,6 +64,38 @@ Every instance is fully determined by `(base_seed, level, split, index)`, so
 generation is reproducible and resumable. Tours are stored **canonicalized**
 (start at city 0, direction fixed) so they can be used directly as supervised
 targets.
+
+## Training
+
+Smoke test the full loop quickly on CPU (small subset, a few levels):
+
+```bash
+.venv/bin/python training/train.py --data-dir data/phase0 \
+    --levels 3 4 5 6 --train-limit 600 --val-limit 200 \
+    --steps-per-epoch 30 --max-epochs-per-level 4 --device cpu \
+    --output-dir runs/smoke
+```
+
+Full Phase 0 run (uses `configs/phase0.yaml`; picks up CUDA automatically):
+
+```bash
+.venv/bin/python training/train.py --config configs/phase0.yaml --data-dir data/phase0
+```
+
+Per-epoch metrics (accuracy / mean gap / worst gap for every active level) are
+written to `<output-dir>/metrics.csv`; the final model to `model_final.pt`. Plot
+the key chart:
+
+```bash
+.venv/bin/python analysis/plot.py --metrics runs/phase0/metrics.csv \
+    --out runs/phase0/accuracy_by_level.png
+```
+
+Notes:
+- Gradient clipping is on by default (`--grad-clip 1.0`). At `lr>1e-4` without it
+  the model overshoots on step 1 and collapses to the uniform-policy plateau.
+- Evaluation runs per level (uniform n), so greedy decode never sees padding.
+- Warm-up levels (n=3,4) graduate automatically; n=3 is always 100% (one tour).
 
 ## Layout
 
