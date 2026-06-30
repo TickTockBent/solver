@@ -32,8 +32,11 @@ ENV LNHM_DATA_DIR=/workspace/data/phase0 \
     LNHM_DEVICE=cuda \
     LNHM_GENERATE_DATA=auto
 
-RUN mkdir -p "$LNHM_DATA_DIR" "$LNHM_OUTPUT_DIR" \
-    && chmod +x /workspace/lnhm/docker/entrypoint.sh
+# Strip any CR (Windows checkouts via git autocrlf give the entrypoint CRLF line
+# endings, which breaks the shebang: "/usr/bin/env: 'bash\r': No such file").
+RUN sed -i 's/\r$//' /workspace/lnhm/docker/entrypoint.sh \
+    && chmod +x /workspace/lnhm/docker/entrypoint.sh \
+    && mkdir -p "$LNHM_DATA_DIR" "$LNHM_OUTPUT_DIR"
 
 # OPTIONAL: bake the dataset into the image at build time so the (expensive) GPU
 # instance starts training immediately instead of spending minutes generating
