@@ -82,6 +82,13 @@ class AutoregressiveDecoder(nn.Module):
         """
         batch_size, num_nodes, _ = node_embeddings.shape
 
+        # In mixed-n batches, a short instance becomes fully visited before the
+        # longest one finishes; its row would then be all -inf and NaN the
+        # softmax. For such rows mask nothing (uniform, finite) -- those steps
+        # are excluded from the loss anyway, so the value is harmless.
+        fully_masked_rows = unavailable_mask.all(dim=1, keepdim=True)
+        safe_mask = unavailable_mask & ~fully_masked_rows
+
         # --- multi-head glimpse ---
         query_heads = self._split_heads(self.context_to_query(context_query).unsqueeze(1))
         key_heads = self._split_heads(self.glimpse_key_projection(node_embeddings))
@@ -89,7 +96,7 @@ class AutoregressiveDecoder(nn.Module):
 
         attention_scores = torch.matmul(query_heads, key_heads.transpose(-2, -1))
         attention_scores = attention_scores / math.sqrt(self.head_dim)  # (B, H, 1, N)
-        mask_for_heads = unavailable_mask.view(batch_size, 1, 1, num_nodes)
+        mask_for_heads = safe_mask.view(batch_size, 1, 1, num_nodes)
         attention_scores = attention_scores.masked_fill(mask_for_heads, float("-inf"))
         attention_weights = F.softmax(attention_scores, dim=-1)
 
@@ -102,7 +109,7 @@ class AutoregressiveDecoder(nn.Module):
         compatibility = torch.matmul(logit_keys, glimpse.transpose(-2, -1)).squeeze(-1)
         compatibility = compatibility / math.sqrt(self.d_model)  # (B, N)
         clipped_logits = torch.tanh(compatibility) * self.tanh_clipping
-        return clipped_logits.masked_fill(unavailable_mask, float("-inf"))
+        return clipped_logits.masked_fill(safe_mask, float("-inf"))
 
     def _initial_state(
         self, node_embeddings: torch.Tensor, node_padding_mask: torch.Tensor | None

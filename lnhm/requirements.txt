@@ -1,7 +1,7 @@
 numpy>=1.24
 pyyaml>=6.0
+torch>=2.1          # CPU build for data-gen/dev on this host; install the CUDA build on the GPU box
+matplotlib>=3.7     # analysis/plot.py
 
-# Added with the training loop in a later step:
-# torch>=2.1
+# Optional richer logging (training writes CSV by default):
 # wandb>=0.16
-# matplotlib>=3.7
