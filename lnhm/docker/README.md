@@ -43,25 +43,72 @@ flightdeck submit "bash docker/entrypoint.sh" \
      regeneration — set `--env LNHM_GENERATE_DATA=never` if you bundle it. Default
      `auto` regenerates on the instance (costs a few GPU-minutes of CPU work).
 
-## Path B — direct image (vast.ai-native API, RunPod, local GPU)
+## Path B — local GPU box (Windows/Linux + Docker + NVIDIA GPU)
 
-For providers that pull a prebuilt image, use the repo `Dockerfile` (CUDA +
-PyTorch base, deps baked in, `entrypoint.sh` as ENTRYPOINT):
+Self-contained: build the image and run it on the machine with the GPU.
 
-```bash
-docker build -t <registry>/lnhm-phase0:latest -f Dockerfile .
-docker push  <registry>/lnhm-phase0:latest        # must be pull-able by the instance
-docker run --gpus all \
-  -e LNHM_LEVELS="3 4 5 6 7 8 9 10 11 12" -e LNHM_MAX_EPOCHS=150 \
-  -v "$PWD/outputs:/workspace/outputs" <registry>/lnhm-phase0:latest
+### 1. Get the project onto the box
+
+Cleanest (no GitHub) — clone directly from the source host over SSH:
+
+```powershell
+git clone ssh://ticktockbent@10.0.20.72/home/ticktockbent/projects/experiments/solver
+cd solver/lnhm
 ```
 
-Local GPU smoke test (no provider): same `docker run` on the box with the GPU.
+Offline fallback: on the source host run `git bundle create solver.bundle --all`,
+copy the single file across, then `git clone solver.bundle solver`.
+
+### 2. Build the image
+
+```powershell
+docker build -t lnhm-phase0 -f Dockerfile .
+```
+
+The dataset is regenerated inside the container on first run (deterministic). To
+skip ~10–15 min of in-container CPU data-gen, mount a prebuilt dataset at run time
+(`-v <host-data>:/workspace/lnhm/data/phase0 -e LNHM_GENERATE_DATA=never`) or
+uncomment the data-gen `RUN` in the Dockerfile.
+
+### 3. Run
+
+GPU prerequisites on Windows: Docker Desktop on the **WSL2 backend** + a recent
+NVIDIA driver (the NVIDIA Container Toolkit ships via WSL2); then `--gpus all` works.
+
+**A/B/C/D cross-level matrix** (the Phase 0 gate, ~20 min on a 4090):
+
+```powershell
+docker run --gpus all `
+  -e LNHM_TASK=crosslevel `
+  -v ${PWD}/outputs:/workspace/outputs `
+  lnhm-phase0
+# -> outputs/cross_level_results.csv
+```
+
+**Full curriculum training** (metrics.csv + checkpoint + accuracy plot):
+
+```powershell
+docker run --gpus all `
+  -e LNHM_TASK=train -e LNHM_MAX_EPOCHS=150 `
+  -v ${PWD}/outputs:/workspace/outputs `
+  lnhm-phase0
+```
+
+Override the matrix with e.g.
+`-e LNHM_XLEVEL_ARGS="--anchors 5 9 11 --seeds 0 1 2 3 4 --total-steps 2500"`.
+
+(PowerShell: backtick line-continuation, `${PWD}`. cmd.exe: `%cd%`. bash/WSL:
+`\` and `$PWD`.)
+
+For providers that pull a prebuilt image (vast.ai-native, RunPod), additionally
+`docker push <registry>/lnhm-phase0:latest` so the instance can pull it.
 
 ## Environment variables (both paths)
 
 | Var | Default | Meaning |
 |-----|---------|---------|
+| `LNHM_TASK` | `train` | `train` (curriculum) or `crosslevel` (A/B/C/D matrix) |
+| `LNHM_XLEVEL_ARGS` | — | extra args passed to `cross_level.py` (anchors/seeds/steps) |
 | `LNHM_LEVELS` | `3 4 … 12` | curriculum levels |
 | `LNHM_STEPS_PER_EPOCH` | `100` | optimizer steps per epoch |
 | `LNHM_MAX_EPOCHS` | `150` | max epochs per level before forced advance |
