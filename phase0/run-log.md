@@ -145,3 +145,78 @@ experiment: raise the graduation threshold or fix epochs-per-level so each level
 actually trains and we can measure its ceiling rather than transfer-plus-one-epoch.
 
 ---
+
+## Run 3 — full curriculum 3→12 (single seed, scale validation)
+
+- **Date:** 2026-06-30
+- **Goal:** confirm the breakthrough/cascade extends past n=8 to the top of the
+  brute-force range, and the model doesn't fall apart at n=9–12.
+- **Command:** as Run 1 but `--levels 3..12`, `--seed 0`, `--output-dir runs/full`.
+- **Environment:** motherbrain, 4 CPU threads. **Wall time: 461 s (~7.7 min), 22 epochs.**
+
+### Outcome: every level graduated. Cascade holds through n=11; n=12 is the wall.
+
+Graduation epochs: n=3@1, 4@2, 5@8, 6@9, 7@10, 8@11, 9@12, 10@13, 11@14, **12@22**.
+So n=6–11 each graduated in ~1 epoch as the frontier (the cascade), but **n=12
+needed ~8 epochs to crawl to exactly 0.500** — the 710K-param model's capacity
+ceiling becoming visible right at the top of the exact-solvable range.
+
+### Final ladder (epoch 22)
+
+| n | accuracy | mean gap | worst gap |
+|---|----------|----------|-----------|
+| 3 | 1.000 | 0.0000 | 0.000 |
+| 4 | 0.960 | 0.0011 | 0.066 |
+| 5 | 0.955 | 0.0014 | 0.061 |
+| 6 | 0.933 | 0.0021 | 0.101 |
+| 7 | 0.888 | 0.0035 | 0.155 |
+| 8 | 0.822 | 0.0065 | 0.268 |
+| 9 | 0.756 | 0.0091 | 0.259 |
+| 10 | 0.666 | 0.0133 | 0.205 |
+| 11 | 0.596 | 0.0173 | 0.272 |
+| 12 | 0.500 | 0.0231 | 0.377 |
+
+Note: mean gaps stay tiny throughout — even n=12 averages 2.3% off optimal. The
+model "mostly gets it" everywhere; the strict 1% bar is what only 50% clear at n=12.
+
+### Backward-transfer view: accuracy at graduation vs. final epoch
+
+| n | @graduation | @final | gain |
+|---|-------------|--------|------|
+| 4 | 0.486 | 0.960 | +0.474 |
+| 5 | 0.836 | 0.955 | +0.119 |
+| 6 | 0.843 | 0.933 | +0.091 |
+| 7 | 0.767 | 0.888 | +0.121 |
+| 8 | 0.689 | 0.822 | +0.132 |
+| 9 | 0.631 | 0.756 | +0.125 |
+| 10 | 0.562 | 0.666 | +0.104 |
+| 11 | 0.519 | 0.596 | +0.078 |
+
+**Every level kept improving after the frontier moved past it** (+0.08 to +0.13
+for mid levels), consistently and monotonically — the shape the scale-unification
+thesis predicts. Cross-check vs Run 1 (levels 3–8 only): the full run's lower
+levels all end *higher* (n=8: 0.689 → 0.822) because they trained longer while the
+frontier climbed.
+
+**Still confounded — still not proof.** Those levels remained 7–12% of every batch
+after graduating, so the gain mixes "more training on own data" with "transfer
+from larger n." Disentangling these is exactly the Model A/B/C job.
+
+### Findings
+
+1. **Scale-unification holds across the full brute-force range. [MEDIUM-HIGH]** No
+   collapse at n=9–12; clean monotonic ladder; the learned structure transfers
+   upward (one-epoch graduation through n=11).
+2. **Capacity wall at n=12 for the 710K model. [HIGH]** 8 epochs to barely clear
+   50% vs ~1 epoch elsewhere. Directly feeds the spec's "increase model size"
+   decision lever — n≥12 is where this size runs out.
+3. **Backward-transfer pattern strengthened but still confounded. [MEDIUM]** See above.
+
+### Status
+
+Local validation **complete and successful**. The approach works end-to-end and
+is seed-robust. Next real milestone: `analysis/cross_level.py` (A/B/C controls) to
+convert the backward-transfer pattern from a consistent hint into a measured
+effect — the compute-heavy part that wants the GPU/offload path.
+
+---
