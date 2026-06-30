@@ -1,0 +1,12 @@
+# Requirements for the FlightDeck bundle path ONLY.
+#
+# FlightDeck runs a stock base_image (e.g. pytorch/pytorch:*-cuda*-runtime) and
+# pip-installs this file into it. torch is therefore DELIBERATELY OMITTED: it
+# already ships (CUDA build) in the base image, and reinstalling it from PyPI
+# would clobber the CUDA build with a CPU one and break GPU training.
+#
+# (The repo-root requirements.txt keeps torch for local/dev installs where there
+# is no CUDA base image.)
+numpy>=1.24
+pyyaml>=6.0
+matplotlib>=3.7

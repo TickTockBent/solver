@@ -1,0 +1,13 @@
+# Keep the build context (and image) small.
+.venv/
+__pycache__/
+*.pyc
+.git/
+runs/
+wandb/
+*.pt
+*.ckpt
+# Generated dataset: regenerated in-container by the entrypoint (deterministic),
+# or bake it at build time via the optional RUN in the Dockerfile. Either way it
+# does not belong in the build context.
+data/phase0/
