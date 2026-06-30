@@ -1,0 +1,52 @@
+experiment: phase0_cross_level_reinforcement
+
+data:
+  levels: [3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+  warmup_levels: [3, 4]            # degenerate / near-degenerate; seed only, not measured
+  train_instances_per_level: 10000 # bump to 50k for n >= 8; 2k for warm-up levels
+  val_instances_per_level: 2000    # 500 for warm-up levels
+  coordinate_range: [0.0, 1.0]
+  distribution: uniform
+  solver: held_karp                # exact for all of Phase 0; enumeration only as n<=8 cross-check
+
+model:
+  type: transformer
+  d_model: 128
+  n_encoder_layers: 3
+  n_heads: 8
+  ff_dim: 512
+  dropout: 0.1
+
+training:
+  optimizer: adam
+  lr: 0.0001
+  scheduler: cosine_annealing_warm_restarts
+  batch_size: 256
+  epochs_per_level: 150
+  graduation_threshold: 0.50       # 50% within 1% of optimum, applied at n >= 5
+  accuracy_tolerance: 0.01         # 1% optimality gap = "correct"
+  target_canonicalization: true    # start at city 0, fix direction (smaller 2nd index)
+
+curriculum:
+  strategy: additive
+  frontier_weight: 0.4
+  prior_levels_weight: equal_share # remaining 0.6 split equally
+  measurement_starts_at: 5         # warm-up levels carry no signal
+
+evaluation:
+  run_every_n_epochs: 1
+  metrics: [accuracy, mean_gap, worst_gap]
+  cross_level_seeds: 5
+  cross_level_anchors: [5, 6, 7]   # non-degenerate anchor levels
+  cross_level_ranges_N: [7, 10, 12] # Model A trains on [3, N], N > anchor
+  controls:
+    model_b: anchor_only_fixed_data     # naive control (same compute, fixed dataset)
+    model_c: anchor_only_fresh_data     # regularization control (unlimited unique data)
+  success_metric: A_minus_C_pp          # require A - C >= 5pp, consistent across seeds
+  localization_probe: true              # frozen-encoder test: is transfer encoder-borne?
+
+infrastructure:
+  gpu: single
+  data_gen_parallelism: max_cores
+  data_gen_distributed: false      # Phase 0 is single-machine; no queue/cluster/Concorde
+  storage_format: jsonl_gzip

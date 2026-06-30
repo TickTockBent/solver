@@ -1,0 +1,7 @@
+numpy>=1.24
+pyyaml>=6.0
+
+# Added with the training loop in a later step:
+# torch>=2.1
+# wandb>=0.16
+# matplotlib>=3.7
