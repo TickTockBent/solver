@@ -220,3 +220,52 @@ convert the backward-transfer pattern from a consistent hint into a measured
 effect — the compute-heavy part that wants the GPU/offload path.
 
 ---
+
+## Cross-level spot-check — anchor n=9, N=12, 2 seeds (design validation)
+
+- **Date:** 2026-06-30
+- **Goal:** validate the A/B/C/D harness at a HARD anchor with adequate budget,
+  after the first attempt (anchor n=5, 600 steps) failed as a budget/saturation
+  artifact. Models: A=curriculum[3,12], B=anchor-only small pool (2k),
+  C=anchor-only large fresh pool (40k), D=curriculum[3,9]. 2500 steps each,
+  compute-matched, same init per seed. CPU.
+- **Note:** the run completed cleanly but the harness reported exit code -1 — an
+  artifact of a session/container restart mid-run (job dir changed); full results
+  were written.
+
+### Results
+
+|        | acc_A | acc_B | acc_C | acc_D | A−C | A−D |
+|--------|-------|-------|-------|-------|-----|-----|
+| seed 0 | 0.718 | 0.747 | 0.805 | 0.636 | −0.086 | +0.082 |
+| seed 1 | 0.704 | 0.760 | 0.796 | 0.625 | −0.092 | +0.079 |
+| mean   | 0.711 | 0.753 | 0.800 | 0.631 | **−0.089** | **+0.081** |
+
+### Reading
+
+1. **Harness validated.** A escaped the starvation floor (0.71, healthy), and
+   **B < C** (~5pp) — the overfitting control now bites at a hard anchor.
+2. **A < C (−0.089):** at equal compute, single-level *focus* beats the diluted
+   full curriculum at the anchor. The spec's naive "curriculum > single-level"
+   metric **fails** under compute-matching.
+3. **A > D (+0.081, consistent both seeds):** A and D are both curricula; the only
+   difference is A also trains on levels *larger* than the anchor (10,11,12).
+   A wins by ~8pp → **training on larger instances improved the smaller anchor** —
+   the backward-transfer / scale-unification signal, isolated. **Adding Model D
+   flipped a false negative (A<C) into a real positive** — without it we'd have
+   concluded "no effect."
+
+### Caveat (confound surfaced) + fix
+
+The +8pp is confounded by the **LR schedule**: both models used a single cosine
+decay over 2500 steps, so D trained its anchor at the low-LR tail while A hit it
+mid-schedule. Part of A>D could be LR position, not transfer. **Fix applied:**
+`cross_level.py` now uses **constant LR** (removes schedule position as a
+variable) and writes the results CSV incrementally with flush (so a killed run
+keeps completed rows — directly addressing the detached-death above).
+
+**Verdict:** promising hint, not a result — 2 seeds, one anchor, now de-confounded.
+Ready for the full matrix (anchors {5 neg-control, 9, 11}, 5 seeds) on a GPU
+(~20 min there vs ~15 h CPU).
+
+---
