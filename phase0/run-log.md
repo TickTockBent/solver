@@ -90,3 +90,58 @@ epoch  frontier  n3    n4    n5    n6    n7    n8
 - Next: reproduce with a different seed (Run 2) before changing anything.
 
 ---
+
+## Run 2 — reproducibility check (seed 1, identical config)
+
+- **Date:** 2026-06-30
+- **Goal:** confirm Run 1's trends are not a single-seed artifact. Same command,
+  `--seed 1`, `--output-dir runs/second`. (A same-seed re-run would be a
+  deterministic replay, so seed was changed.)
+- **Environment:** motherbrain, 4 CPU threads. **Wall time: 84 s, 8 epochs total.**
+
+### Trajectory
+
+```
+epoch  frontier  n3    n4    n5    n6    n7    n8
+   3   n=5     1.00  0.51  0.28*
+   4   n=5     1.00  0.57  0.30*          ← shorter plateau
+   5   n=5     1.00  0.78  0.63*          ← breakthrough (epoch 5, vs epoch 8 in Run 1)
+   6   n=6     1.00  0.96  0.86  0.79*    ← one-epoch cascade resumes
+   7   n=7     1.00  0.98  0.90  0.83  0.74*
+   8   n=8     1.00  0.98  0.93  0.86  0.77  0.66*
+```
+
+### Final accuracy: Run 1 vs Run 2
+
+| n | Run 1 (seed 0) | Run 2 (seed 1) | Δ |
+|---|----------------|----------------|-----|
+| 3 | 1.000 | 1.000 | +0.000 |
+| 4 | 0.986 | 0.984 | −0.002 |
+| 5 | 0.945 | 0.928 | −0.016 |
+| 6 | 0.885 | 0.857 | −0.028 |
+| 7 | 0.789 | 0.767 | −0.022 |
+| 8 | 0.689 | 0.661 | −0.029 |
+
+### Verdict — all four Run 1 findings reproduce
+
+1. **Clean learning:** reproduced; identical monotonic ladder shape.
+2. **n=5 breakthrough:** reproduced — plateau-then-jump is real in both runs. The
+   **timing is the seed-variable part** (jump at epoch 5 here vs epoch 8 in Run 1);
+   *whether* it happens and the post-jump outcome are stable.
+3. **One-epoch graduation cascade above n=5:** reproduced.
+4. **Backward-transfer hint:** reproduced (n=5: 0.63→0.93 after frontier moved on;
+   n=4: 0.48→0.98). Still confounded, still only a hint.
+
+**Caveat on the comparison:** the final-accuracy deltas are mildly confounded by
+total epoch count — Run 1 ran 11 epochs vs Run 2's 8 (its later breakthrough
+pushed the whole schedule out), so its lower levels got more cumulative training.
+The consistent small negative Δ is mostly that, not seed quality. Fixing
+epochs-per-level (rather than graduate-and-advance) will remove this for the real
+experiment.
+
+**Conclusion:** trends are seed-robust. Cleared to (a) run the full 3→12
+curriculum and (b) build the A/B/C controls. Open knob before the real
+experiment: raise the graduation threshold or fix epochs-per-level so each level
+actually trains and we can measure its ceiling rather than transfer-plus-one-epoch.
+
+---
