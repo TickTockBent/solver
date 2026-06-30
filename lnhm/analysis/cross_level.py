@@ -170,7 +170,11 @@ def run_experiment(arguments, config, results_path: str) -> List[Dict]:
             b_source = make_fixed_pool_source(b_coords, b_tours, batch_size)
             c_source = make_fixed_pool_source(c_coords, c_tours, batch_size)
             anchor_val: LevelArrays = data_pool.val[anchor]
-            d_accuracy_cache: Dict[int, float] = {}  # seed -> acc_D for this anchor (D ignores range)
+            # B, C, D depend only on (anchor, seed), NOT on range_n -> compute once per
+            # seed and reuse across ranges. Only A varies with the curriculum range.
+            b_accuracy_cache: Dict[int, float] = {}
+            c_accuracy_cache: Dict[int, float] = {}
+            d_accuracy_cache: Dict[int, float] = {}
 
             for range_n in arguments.ranges:
                 if range_n <= anchor:
@@ -178,22 +182,26 @@ def run_experiment(arguments, config, results_path: str) -> List[Dict]:
                     continue
                 for seed in arguments.seeds:
                     started = time.monotonic()
+                    accuracies: Dict[str, float] = {}
+
+                    # Model A: full curriculum [3, range_n] -- depends on range, trained every time.
                     curriculum_source = CurriculumSource(
                         data_pool, list(range(3, range_n + 1)), total_steps, batch_size, frontier_weight)
+                    a_model = train_one_model(model_config, curriculum_source.sample, total_steps, device, lr, seed)
+                    accuracies["A"] = evaluate_level(a_model, anchor_val, device, tolerance)["accuracy"]
 
-                    accuracies: Dict[str, float] = {}
-                    for model_name, sample_fn in (("A", curriculum_source.sample),
-                                                  ("B", b_source), ("C", c_source)):
-                        model = train_one_model(model_config, sample_fn, total_steps, device, lr, seed)
-                        accuracies[model_name] = evaluate_level(model, anchor_val, device, tolerance)["accuracy"]
-
-                    # Model D: curriculum UP TO the anchor only. Depends on (anchor, seed),
-                    # not range_n, so cache across ranges. A vs D is the thesis test.
+                    # Models B/C/D: independent of range_n -> compute once per (anchor, seed).
                     if seed not in d_accuracy_cache:
+                        b_model = train_one_model(model_config, b_source, total_steps, device, lr, seed)
+                        b_accuracy_cache[seed] = evaluate_level(b_model, anchor_val, device, tolerance)["accuracy"]
+                        c_model = train_one_model(model_config, c_source, total_steps, device, lr, seed)
+                        c_accuracy_cache[seed] = evaluate_level(c_model, anchor_val, device, tolerance)["accuracy"]
                         d_source = CurriculumSource(
                             data_pool, list(range(3, anchor + 1)), total_steps, batch_size, frontier_weight)
                         d_model = train_one_model(model_config, d_source.sample, total_steps, device, lr, seed)
                         d_accuracy_cache[seed] = evaluate_level(d_model, anchor_val, device, tolerance)["accuracy"]
+                    accuracies["B"] = b_accuracy_cache[seed]
+                    accuracies["C"] = c_accuracy_cache[seed]
                     accuracies["D"] = d_accuracy_cache[seed]
 
                     row = {
