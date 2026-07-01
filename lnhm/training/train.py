@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import os
 import sys
 import time
@@ -187,7 +188,28 @@ def main(argv: List[str]) -> int:
     torch.save({"state_dict": model.state_dict(), "model_config": model_config,
                 "levels": levels, "run_name": run_name}, checkpoint_path)
     elapsed = time.monotonic() - run_start
-    print(f"\nDone in {elapsed:.1f}s. Metrics -> {metrics_path}  Checkpoint -> {checkpoint_path}")
+
+    # Compute-tracking summary: convergence is data-dependent, so record exactly how
+    # much training each run took (steps, instances seen, wall). Lets the 2x2
+    # overtraining experiment separate quality-compounding from compute-compounding.
+    total_steps = global_epoch * arguments.steps_per_epoch
+    summary = {
+        "run_name": run_name,
+        "levels": levels,
+        "seed": arguments.seed,
+        "train_limit": arguments.train_limit,
+        "batch_size": batch_size,
+        "steps_per_epoch": arguments.steps_per_epoch,
+        "total_epochs": global_epoch,
+        "total_steps": total_steps,
+        "instances_seen": total_steps * batch_size,
+        "wall_seconds": round(elapsed, 1),
+    }
+    with open(os.path.join(run_output_dir, "train_summary.json"), "w") as summary_file:
+        json.dump(summary, summary_file, indent=2)
+
+    print(f"\nDone in {elapsed:.1f}s ({total_steps} steps, {summary['instances_seen']} instances). "
+          f"Metrics -> {metrics_path}  Checkpoint -> {checkpoint_path}")
     return 0
 
 
