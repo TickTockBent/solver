@@ -147,9 +147,6 @@ free, but does not replace depth.
 
 ## Prediction scorecard (called before the eval, for the record)
 
-_Attribution corrected 2026-07-01: an earlier version of this section had the two
-predictors swapped. Correct record, per the conversation where the bets were made:_
-
 - **n=12 clustered:** WS 0.985 / Claude ≥0.99 / **actual 0.987** — WS near-exact;
   Claude's full-parity call just missed.
 - **Clustered n=30 (the tell-tale):** WS "measurable lift, ~0.78 — blob edge structure is
