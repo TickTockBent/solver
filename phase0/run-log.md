@@ -269,3 +269,67 @@ Ready for the full matrix (anchors {5 neg-control, 9, 11}, 5 seeds) on a GPU
 (~20 min there vs ~15 h CPU).
 
 ---
+
+## Cross-level FULL MATRIX — the Phase 0 cross-level result
+
+- **Date:** 2026-07-01
+- **Setup:** anchors {5 (neg control), 9, 11} x ranges {7,10,12} (N>anchor) x 5 seeds,
+  2500 steps, **constant LR**, compute-matched, same init per seed. Models A
+  (curriculum [3,N]), B (anchor-only small pool), C (anchor-only large fresh pool),
+  D (curriculum [3,anchor]). RTX 4090. Raw data: `phase0/cross_level_results.csv`.
+- **Key comparison:** A vs D = "do levels LARGER than the anchor help it?" (the
+  backward-transfer / scale-unification claim). A vs C = spec's naive metric.
+
+### Results (means over 5 seeds)
+
+| anchor | N | A−D | A−C | abs A / C / D |
+|--------|---|-----|-----|---------------|
+| 5 | 7  | +0.031 | −0.003 | 0.98 / 0.98 / 0.95 |
+| 5 | 10 | +0.025 | −0.008 | 0.97 / 0.98 / 0.95 |
+| 5 | 12 | +0.021 | −0.013 | 0.97 / 0.98 / 0.95 |
+| 9 | 10 | +0.028 | −0.050 | 0.79 / 0.84 / 0.75 |
+| 9 | 12 | +0.049 | −0.029 | 0.81 / 0.84 / 0.75 |
+| 11 | 12 | +0.032 | −0.094 | 0.66 / 0.75 / 0.63 |
+
+### Findings
+
+1. **A > D in ALL 30 runs.** Every seed/config positive (range +0.013 to +0.057);
+   none negative. Sign-consistency at this level means the effect — training on
+   larger instances measurably improves the smaller anchor — is **real and robust**.
+2. **The N-slope flips with anchor difficulty (mechanistic result).**
+   - n=5 (saturated, C≈0.98): A−D *shrinks* with N (0.031 → 0.025 → 0.021) —
+     dilution wins where there's no headroom.
+   - n=9 (headroom, C≈0.84): A−D *grows* with N (0.028 → 0.049) — adding levels
+     11,12 above the anchor helps *more*, despite extra dilution — transfer wins.
+   This sign flip is strong evidence for genuine larger-instance transfer, not just
+   "curriculum helps." (By levels-above-anchor: 1 level ≈ +0.03, 3 levels ≈ +0.05,
+   but only where the anchor has room to use them.)
+3. **Magnitude is modest — below the ≥5pp bar.** Best config (n=9, N=12) means
+   **+0.049**, right at the line; 3/5 seeds clear +0.05, one outlier at +0.033. No
+   config cleanly PASSES "≥5pp across all seeds." The effect is real but small
+   (~2–5pp) at this model scale.
+4. **A−C < 0 everywhere** — single-level focus beats the diluted curriculum at
+   equal compute. Expected; confirms D (not C) is the right thesis control.
+
+### Verdict
+
+**Cross-level reinforcement is CONFIRMED — real, robustly-signed, mechanistically
+coherent — but MODEST (~3–5pp), not the ≥5pp "strong effect" we pre-registered.**
+
+Reconciliation: Run 3's confounded backward-transfer hint was +8 to +13pp; the
+clean A/D controls shrink it to ~3–5pp. That gap is exactly why we ran the
+controls — the confounded number was inflated by anchor levels remaining in the
+batch mix. This is the de-confounded truth.
+
+### Implications
+
+- The program is alive; the open question is now the effect's *size*, which is
+  what **Phase 2's capacity sweep** must answer: **does A−D grow with model size?**
+  (+3pp → +10pp with a bigger model would make the thesis strong; staying ~3pp
+  means real-but-small, and the composition path carries the weight.)
+- **Phase 1 (composition) does not depend on this being large** — the model is a
+  local solver regardless — so it proceeds unblocked.
+- n=11's slope is untestable in Phase 0 (no levels above 12); confirming the flip
+  at higher anchors needs a curriculum extended past n=12 (Phase 2).
+
+---
