@@ -46,11 +46,28 @@ at finite n, so p against BHH is a mild *under*estimate of true p.)
 
 ### f — compute per unit accuracy
 ```
-f = (compute-seconds per 10^6 cities) / p
+f = (CPU core-seconds per 10^6 cities) / p
 ```
-Throughput normalized by quality, so a method that is fast *but bad* gets no
-credit. **Lower is better.** Reported as a ratio to the frontier, it is the
-compute-efficiency distance.
+Compute normalized by quality, so a method that is fast *but bad* gets no credit.
+**Lower is better.** Reported as a ratio to the frontier, it is the compute-
+efficiency distance.
+
+**Basis: CPU core-seconds, not wall-clock.** f is a *cost* metric — the compute
+actually consumed (`time.process_time()`, summed across all threads of the process)
+— so a background task stealing the CPU cannot corrupt it, and parallel work is
+charged for every core it uses. Wall-clock (latency) is reported alongside but does
+not feed f: it is contention-sensitive and *hides* parallelism (a 4-core burst
+looks 4× cheaper than it is). The two diverge exactly where our pipeline fans out —
+the torch model construction and the k-d-tree query use all cores, so their
+cpu-seconds exceed their wall-seconds; the single-threaded local-search cleanup has
+cpu ≈ wall. (Caveat: LKH is a subprocess and is *not* counted — fine, since it is
+only ever the untimed reference, never a timed method.)
+
+_Historical note: the two tables above (the original p/f sweep and the million-city
+row) were measured on **wall-clock**. For their single-threaded pure-Python cleanups
+that ≈ cpu-seconds when uncontended, but the compose construction fans out, so their
+compose-`f` slightly understates true compute cost. The "Kernel rewrite" section
+below uses the corrected cpu-seconds basis and reports both columns._
 
 ### Reference points
 | | p | f |
@@ -209,6 +226,90 @@ axes, and the learned model is a net negative on `f`.** That is the honest resul
 
 ## Immediate next steps
 
-- **Reversal-free cleanup (Or-opt / linked-list 2-opt)** to flatten the super-linear
-  branch and make "near-linear at a million" actually true end-to-end.
+- ~~Reversal-free cleanup~~ **DONE** — see "Kernel rewrite" below.
 - **The dynamic experiment** — the frontier that this approach is actually built for.
+
+---
+
+## Kernel rewrite: compiled 2-opt + reversal-free Or-opt
+
+The frontier-distance section named two fixable gaps in the cleanup: a **~40×
+constant** (pure Python vs compiled) and a **super-linear scaling** (~n^1.72, from
+array-reversal 2-opt). `lnhm/analysis/fast_local_search.py` addresses both:
+
+- **Compiled 2-opt** (numba `@njit`): the same neighbor-list 2-opt with don't-look
+  bits and shorter-segment reversal — kills the ~40× interpreter constant.
+- **Reversal-free Or-opt** (doubly-linked list): relocates runs of 1–3 cities next
+  to a spatial neighbor with O(1) relinking and **no segment reversal** — near-linear,
+  and it finds improving moves plain 2-opt cannot, which *lifts quality*.
+
+The two alternate to a joint local optimum. Wired into `compose_solve` as
+`cleanup="fast_local"`.
+
+### Methodology
+
+Identical protocol to the p/f sweep above: one random instance per scale (seed 0);
+reference = exact Held-Karp (n≤12), LKH (n≤2000), BHH `0.7124·√n` (n>2000);
+`p = 1/(1+gap)`. The only change is the cleanup local search
+(`neighbor_two_opt` → `fast_local_search`, k=8 neighbors, Or-opt segments ≤3). Numba
+JIT is warmed before timing. **f is on the corrected CPU-core-seconds basis**
+(`time.process_time()`, contention-robust); wall-clock is reported alongside for
+latency. Two methods: `cmp+fast` (composition construction + fast cleanup) and
+`SFC+fast` (Hilbert + fast cleanup); for compose rows, construction and cleanup are
+timed separately.
+
+### Results (fast kernel, cpu-seconds basis)
+
+| n | ref | method | gap% | **p** | cpu_s | wall_s | **f** |
+|---|---|---|---|---|---|---|---|
+| 10 | exact | cmp+fast | 0.0 | 1.000 | 0.04 | 0.01 | 3699 |
+| 10 | exact | SFC+fast | 0.0 | 1.000 | 0.01 | 0.00 | 1285 |
+| 100 | LKH | cmp+fast | 2.1 | 0.980 | 0.10 | 0.03 | 1029 |
+| 100 | LKH | SFC+fast | 1.4 | 0.986 | 0.00 | 0.00 | 41 |
+| 1000 | LKH | cmp+fast | 5.3 | 0.949 | 0.24 | 0.14 | 258 |
+| 1000 | LKH | SFC+fast | 6.8 | 0.936 | 0.00 | 0.00 | 4 |
+| 100000 | BHH | cmp+fast | 7.2 | 0.933 | 23.22 | 15.25 | 249 |
+| 100000 | BHH | SFC+fast | 8.4 | 0.923 | 0.58 | 0.48 | 6 |
+| 1000000 | BHH | cmp+fast | 6.9 | 0.936 | 278.76 | 199.08 | 298 |
+| 1000000 | BHH | SFC+fast | 7.8 | 0.928 | 27.71 | 25.80 | 30 |
+
+(1M `cmp+fast` split: construction cpu 225 s / wall 147 s; **cleanup cpu 54 s /
+wall 52 s** — versus the old pure-Python cleanup's ~3020 s. The million-city polish
+went from ~50 min to ~52 s, ~58×.)
+
+### What the rewrite bought
+
+1. **Quality (p) jumped ~0.88 → 0.93–0.94 at scale, and to near-optimal at small n**
+   (p 1.000 at n=10, 0.980 at n=100). The gap roughly **halved** at every scale
+   (100k: 14.1% → 7.2%). The Or-opt moves are the lift — this is the ~5–8% regime a
+   good classical local search reaches, up from the old ~13–15%.
+2. **The cleanup stopped being the bottleneck.** At 100k the fast cleanup is
+   **0.8 cpu-s vs the old ~60 s** (~75×) *at better quality*. The super-linear
+   50-minute million-city polish is gone (see 1M rows).
+3. **The model construction is now the dominant cost.** At 100k, `cmp+fast` spends
+   22.4 cpu-s in construction and 0.8 in cleanup — construction is ~96% of compute.
+
+### What the rewrite sharpened (honest)
+
+- **On static TSP the verdict got *stronger*, not weaker.** With a good cleanup,
+  `cmp+fast` (p 0.933) beats `SFC+fast` (p 0.923) by the same scale-stable ~+0.01 —
+  but now costs **~40× more on the cpu basis at 100k (f 249 vs 6), ~10× at 1M
+  (298 vs 30)** — the penalty shrinks as construction amortizes, but `SFC+fast`
+  dominates at every scale, because the cleanup no longer equalizes them and the
+  model construction's parallel cost is now fully charged. The learned model still
+  does not earn its keep on static uniform TSP.
+- **Residual super-linearity.** The 2-opt half still uses array reversals, so it is
+  ~40× cheaper but *still* super-linear; Or-opt is the near-linear part. Fully
+  flattening 2-opt needs a two-level doubly-linked list (O(√n) moves) — a further
+  step, not required at these scales.
+- **We approach but do not reach the ~0.95 frontier** (p ~0.93, gap 7–8% at scale).
+  Closing the rest needs more neighbors (k) or Or-3opt — diminishing returns.
+
+### Before → after (quality, p)
+
+| n | compose: old → new | SFC: old → new |
+|---|---|---|
+| 100 | 0.877 → **0.980** | 0.912 → **0.986** |
+| 1000 | 0.893 → **0.949** | 0.885 → **0.936** |
+| 100000 | 0.877 → **0.933** | 0.865 → **0.923** |
+| 1000000 | 0.877 → **0.936** | 0.868 → **0.928** |

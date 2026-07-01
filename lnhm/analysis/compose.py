@@ -23,6 +23,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
 from data.held_karp import held_karp, tour_distance  # noqa: E402
 from analysis.baselines import nearest_neighbor, neighbor_two_opt, space_filling_curve, two_opt  # noqa: E402
+from analysis.fast_local_search import fast_local_search  # noqa: E402
 
 # A local solver maps cluster coordinates (m, 2) -> a visiting order of 0..m-1.
 LocalSolver = Callable[[np.ndarray], List[int]]
@@ -253,7 +254,7 @@ def compose_solve(
     k_cap: int,
     local_solver: LocalSolver = held_karp_solver,
     partitioner: Callable[[np.ndarray, int], List[List[int]]] = partition_space_filling,
-    cleanup: str = "none",   # "none" | "seam_2opt" | "full_2opt" | "neighbor_2opt"
+    cleanup: str = "none",   # "none" | "seam_2opt" | "full_2opt" | "neighbor_2opt" | "fast_local"
     seam_window: int = 2,
     batch_local_solver: Callable[[List[np.ndarray]], List[List[int]]] = None,
 ) -> List[int]:
@@ -295,6 +296,8 @@ def compose_solve(
         global_tour = two_opt(coordinates, global_tour)
     elif cleanup == "neighbor_2opt":
         global_tour = neighbor_two_opt(coordinates, global_tour)
+    elif cleanup == "fast_local":
+        global_tour = fast_local_search(coordinates, global_tour)
     elif cleanup != "none":
         raise ValueError(f"unknown cleanup mode: {cleanup!r}")
     return global_tour

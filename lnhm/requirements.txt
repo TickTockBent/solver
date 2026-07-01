@@ -3,6 +3,7 @@ pyyaml>=6.0
 torch>=2.1          # CPU build for data-gen/dev on this host; install the CUDA build on the GPU box
 matplotlib>=3.7     # analysis/plot.py
 scipy>=1.11         # analysis/baselines.py: k-d tree neighbor lists for neighbor_two_opt
+numba>=0.59         # analysis/fast_local_search.py: compiled 2-opt + reversal-free Or-opt cleanup
 
 # Optional richer logging (training writes CSV by default):
 # wandb>=0.16
