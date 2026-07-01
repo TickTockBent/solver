@@ -5,3 +5,8 @@
 * text=auto eol=lf
 *.sh text eol=lf
 *.py text eol=lf
+
+# Gzipped datasets are binary: never apply EOL conversion, or they corrupt on a
+# Windows checkout. `binary` == -text -diff.
+*.gz binary
+*.jsonl.gz binary
