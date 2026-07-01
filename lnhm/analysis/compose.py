@@ -81,6 +81,59 @@ def make_model_solver(checkpoint_path: str, model_config: dict = None, device: s
     return solve
 
 
+def make_model_batch_solver(checkpoint_path: str, model_config: dict = None,
+                            device: str = "cpu", chunk: int = 8192):
+    """Like make_model_solver, but solves MANY clusters per call in one padded
+    forward pass. Clusters within a composition level are independent, so this is
+    the 'batch dimension' -- far cheaper than a Python loop of single solves."""
+    import torch
+    import yaml
+    from model.lnhm import LnhmModel
+
+    torch_device = torch.device(device)
+    checkpoint = torch.load(checkpoint_path, map_location=torch_device)
+    if isinstance(checkpoint, dict) and "state_dict" in checkpoint:
+        state_dict = checkpoint["state_dict"]
+        if model_config is None:
+            model_config = checkpoint.get("model_config")
+    else:
+        state_dict = checkpoint
+    if model_config is None:
+        with open(os.path.join(PROJECT_ROOT, "configs/phase0.yaml")) as config_file:
+            model_config = yaml.safe_load(config_file)["model"]
+    model = LnhmModel.from_config(model_config)
+    model.load_state_dict(state_dict)
+    model.to(torch_device).eval()
+
+    def batch_solve(clusters: List[np.ndarray]) -> List[List[int]]:
+        orders: List[List[int]] = []
+        for start in range(0, len(clusters), chunk):
+            group = clusters[start:start + chunk]
+            lengths = [len(c) for c in group]
+            max_n = max(lengths)
+            coords = torch.zeros(len(group), max_n, 2, dtype=torch.float32, device=torch_device)
+            padding = torch.ones(len(group), max_n, dtype=torch.bool, device=torch_device)
+            for row, cluster in enumerate(group):
+                points = np.asarray(cluster, dtype=np.float64)
+                length = len(points)
+                lower = points.min(axis=0)
+                span = float((points.max(axis=0) - lower).max())
+                if span < 1e-12:
+                    span = 1.0
+                coords[row, :length] = torch.from_numpy(((points - lower) / span).astype(np.float32))
+                padding[row, :length] = False
+            with torch.no_grad():
+                tours, _ = model.solve(coords, node_padding_mask=padding, mode="greedy")
+            tours = tours.cpu().numpy()
+            for row, length in enumerate(lengths):
+                # First `length` picks are the real nodes (padding is masked out until
+                # they're all visited); trivial clusters get the identity order.
+                orders.append(list(range(length)) if length <= 3 else tours[row, :length].tolist())
+        return orders
+
+    return batch_solve
+
+
 # --------------------------------------------------------------------------- #
 # Partitioners: return a list of clusters, each a list of global point indices  #
 # (together a partition of range(n)).                                           #
@@ -200,22 +253,29 @@ def compose_solve(
     k_cap: int,
     local_solver: LocalSolver = held_karp_solver,
     partitioner: Callable[[np.ndarray, int], List[List[int]]] = partition_space_filling,
-    cleanup: str = "none",   # "none" | "seam_2opt" | "full_2opt"
+    cleanup: str = "none",   # "none" | "seam_2opt" | "full_2opt" | "neighbor_2opt"
     seam_window: int = 2,
+    batch_local_solver: Callable[[List[np.ndarray]], List[List[int]]] = None,
 ) -> List[int]:
-    """Solve a large instance by composition. Returns a global tour (valid cycle)."""
+    """Solve a large instance by composition. Returns a global tour (valid cycle).
+
+    `batch_local_solver` (optional) solves all clusters of a level in one call
+    (the parallel 'batch dimension'); without it, clusters are solved one at a time.
+    """
     coordinates = np.asarray(coordinates, dtype=np.float64)
     num_cities = len(coordinates)
+    # Solve a list of clusters at once if a batch solver is given, else one by one.
+    solve_clusters = batch_local_solver or (lambda group: [local_solver(c) for c in group])
 
     # Base case (and the bottom of the recursion below): small enough to solve directly.
     if num_cities <= k_cap:
-        return local_solver(coordinates)
+        return solve_clusters([coordinates])[0]
 
     clusters = partitioner(coordinates, k_cap)
-    cluster_cycles: List[List[int]] = []
-    for cluster in clusters:
-        local_order = local_solver(coordinates[cluster])
-        cluster_cycles.append([cluster[i] for i in local_order])
+    cluster_orders = solve_clusters([coordinates[cluster] for cluster in clusters])
+    cluster_cycles: List[List[int]] = [
+        [cluster[i] for i in order] for cluster, order in zip(clusters, cluster_orders)
+    ]
 
     # Order the clusters by RECURSIVELY composing their centroids: the centroid TSP
     # is the same problem one level up, so the solver calls itself -- log_k(n) depth,

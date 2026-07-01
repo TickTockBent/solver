@@ -32,16 +32,17 @@ sys.path.insert(0, PROJECT_ROOT)
 from data.held_karp import held_karp, tour_distance  # noqa: E402
 from analysis.baselines import (lkh_tour, nearest_neighbor, neighbor_two_opt,  # noqa: E402
                                 space_filling_curve, two_opt)
-from analysis.compose import compose_solve, held_karp_solver, make_model_solver  # noqa: E402
+from analysis.compose import compose_solve, held_karp_solver, make_model_batch_solver  # noqa: E402
 
 Pipeline = Tuple[str, Callable[[np.ndarray], List[int]]]
 
 
-def build_pipelines(k_caps: List[int], model_solver, scale: bool = False) -> List[Pipeline]:
+def build_pipelines(k_caps: List[int], model_batch_solver, scale: bool = False) -> List[Pipeline]:
     """The pipelines to race. Each maps coordinates -> a tour (cycle).
 
     scale=True drops the O(n^2) pipelines (full 2-opt, Held-Karp local solves) and
-    keeps only the near-linear ones, for large-n runs."""
+    keeps only the near-linear ones, for large-n runs. Model composition uses the
+    batched local solver (one padded forward pass per level)."""
     pipelines: List[Pipeline] = [
         ("nearest_neighbor", lambda c: nearest_neighbor(c)),
         ("space_filling", lambda c: space_filling_curve(c)),
@@ -54,15 +55,14 @@ def build_pipelines(k_caps: List[int], model_solver, scale: bool = False) -> Lis
             ("NN+neighbor2opt", lambda c: neighbor_two_opt(c, nearest_neighbor(c))),
         ]
     cleanups = ("none", "neighbor_2opt") if scale else ("none", "seam_2opt", "full_2opt", "neighbor_2opt")
-    local_solvers = (("model", model_solver),) if scale else (("model", model_solver), ("hk", held_karp_solver))
     for k in k_caps:
-        for local_name, local_solver in local_solvers:
+        for cleanup in cleanups:
+            pipelines.append((f"compose:model:k{k}:{cleanup}", lambda c, k=k, cl=cleanup:
+                compose_solve(c, k_cap=k, batch_local_solver=model_batch_solver, cleanup=cl)))
+        if not scale:
             for cleanup in cleanups:
-                name = f"compose:{local_name}:k{k}:{cleanup}"
-                pipelines.append(
-                    (name, lambda c, s=local_solver, k=k, cl=cleanup:
-                        compose_solve(c, k_cap=k, local_solver=s, cleanup=cl))
-                )
+                pipelines.append((f"compose:hk:k{k}:{cleanup}", lambda c, k=k, cl=cleanup:
+                    compose_solve(c, k_cap=k, local_solver=held_karp_solver, cleanup=cl)))
     return pipelines
 
 
@@ -82,8 +82,8 @@ def pareto_undominated(rows: List[Dict]) -> None:
 
 def run(arguments) -> List[Dict]:
     rng = np.random.default_rng(arguments.seed)
-    model_solver = make_model_solver(arguments.checkpoint, device=arguments.device)
-    pipelines = build_pipelines(arguments.k_caps, model_solver, scale=arguments.scale)
+    model_batch_solver = make_model_batch_solver(arguments.checkpoint, device=arguments.device)
+    pipelines = build_pipelines(arguments.k_caps, model_batch_solver, scale=arguments.scale)
 
     all_rows: List[Dict] = []
     for size in arguments.sizes:
