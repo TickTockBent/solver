@@ -69,8 +69,27 @@ lnhm/     the code: model, training, data generation, analysis, composition
 Reproduction: see [lnhm/README.md](lnhm/README.md) for environment and
 commands, and [phase3/HARNESS.md](phase3/HARNESS.md) for the eval harness.
 Every training instance is deterministic in (base_seed, level, split, index),
-so datasets regenerate exactly. Pre-registered predictions are committed before
-the results that scored them; the git history is the provenance.
+so datasets regenerate exactly. Predictions and verdict rules were registered
+before their results: where possible in commit order (the Phase 2 priors and
+the T1-T8 verdict rules precede their results in the history), otherwise
+recorded in-session before the run (the prediction scorecards, the T9 priors).
+The history is notebook-grade provenance, not cryptographic proof, and is
+offered in that spirit.
+
+## AI assistance disclosure
+
+The experiments were designed and run by a human, with one exception. LLM
+agents (Claude) assisted throughout with parsing run outputs, assembling
+results tables, and recording findings in the phase docs while they were
+fresh; they also drafted this README, HIGHLIGHTS.md, and the paper abstract,
+and performed a style-only cleanup pass over the docs (one commit,
+constrained so that tables and every number were hash-verified unchanged).
+The exception is the T9 capacity probe, which an agent designed and ran under
+verdict rules registered before the run, as recorded in
+[phase3/phase3-results.md](phase3/phase3-results.md). No experimental design,
+prior, or go/no-go decision was delegated. Every quantitative claim in this
+repo regenerates from committed code and deterministic data on a laptop CPU;
+none rests on prose, whoever wrote it.
 
 ## Status and scope
 
