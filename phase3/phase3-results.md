@@ -96,8 +96,78 @@ the elastic-k premise is restored **and** strengthened (and it's a cheap thing t
 - `lnhm/data/phase3_clustered/` — the clustered test set + `heldout_{uniform,clustered}.json`.
 - Shallow model: `lnhm/runs/full/model_selfdesc.pt` (wrapped from `model_final.pt`).
 
+---
+
+# Test 2 — Data-diversity retrain: does teaching the model blobs close the gap?
+
+**Method.** Retrained the *same* 710K arch (d128/3L/8H/ff512) on a three-way diet via
+`data/generate_mixed.py`: ⅓ uniform, ⅓ clustered (RANDOMIZED k∈[2,6], σ∈[0.03,0.15] —
+deliberately *not* the test's fixed k=3/σ=0.05), ⅓ "truly random bounded" (anisotropic
+blobs + random uniform background). Levels 3–12, 4000/level, train-to-convergence, CPU.
+Converged in 3200 steps / 589s (vs ~2200 for uniform-only — ~45% more). Then evaluated on
+BOTH held-out sets. The randomized training params make this a genuine *generalization*
+test to the fixed test geometry, not memorization.
+
+## Result — diversity nearly closes the geometry gap, and slightly *helps* uniform
+
+**Sampled best-of-16, p. Baseline = uniform-trained (`runs/full`); Mixed = this retrain.**
+
+| n | uniform test: base → mixed | clustered test: base → mixed | blob penalty (unif−clust): base → mixed |
+|---|---|---|---|
+| 8  | 1.000 → 1.000 | 0.993 → 0.999 | 0.007 → 0.001 |
+| 10 | 0.999 → 0.999 | 0.979 → 0.996 | 0.020 → 0.003 |
+| 12 | 0.995 → 0.996 | 0.959 → 0.987 | **0.036 → 0.009** |
+| 16 | 0.970 → 0.975 | 0.907 → 0.952 | 0.063 → 0.023 |
+| 20 | 0.924 → 0.938 | 0.850 → 0.909 | 0.074 → 0.029 |
+| 25 | 0.856 → 0.870 | 0.788 → 0.855 | 0.068 → 0.015 |
+| 30 | 0.799 → 0.813 | 0.726 → 0.794 | 0.073 → 0.019 |
+
+Three findings:
+
+1. **The blob penalty is largely closed.** At n=12 (in-range) it drops from −3.6pp to
+   −0.9pp — near uniform-parity. Across the whole range the residual penalty is ~1–3pp,
+   down from ~4–7pp. The "harder leaf" Test 1 held against elastic-k mostly evaporates once
+   the model is trained for geometric diversity.
+
+2. **Uniform did not regress — it slightly IMPROVED**, most at extrapolation (+0.014 at
+   n=20/25/30), zero regression anywhere. No capacity tradeoff in this 710K model.
+
+3. **n is still a wall.** Both columns still collapse in absolute terms at n=30 (0.79–0.81 =
+   ~24–26% gap). Diversity does not fix extrapolation-in-n; only depth (Phase 2) does.
+
+## Mechanism — geometric diversity is a partial, free substitute for depth
+
+The unexpected part (uniform extrapolation *improving*, and clustered n=30 lifting +0.068
+rather than staying flat) has one explanation: **a dense blob's local neighborhood looks
+like a slice of a larger uniform instance.** Training on varied local density is implicit
+exposure to the local statistics of bigger n. So diversity transfers to *both* clustered
+geometry (large effect) and uniform extrapolation (small effect) — both are really about
+handling denser local structure than n≤12 uniform ever presents. It buys a little n for
+free, but does not replace depth.
+
+## Prediction scorecard (called before the eval, for the record)
+
+- **n=12 clustered:** Claude 0.985 / user ≥0.99 / **actual 0.987** — Claude near-exact.
+- **Clustered n=30 (the tell-tale):** Claude "measurable lift ~0.78, not flat" / user "still
+  collapses (flat)" / **actual 0.794 (+0.068)** — Claude's "geometry partially transfers
+  across size" confirmed; still a collapse in absolute terms (user right on that).
+- **Uniform extrapolation:** Claude "−0.02 regression" / user "holds within 0.005" /
+  **actual +0.014** — both wrong on sign/magnitude; neither predicted the improvement.
+
+## Verdict for elastic-k
+
+Premise **restored**. A diversity-trained model solves blobs almost as well as uniform
+in-range, so respecting natural dense blobs (elastic k) no longer pays a prohibitive
+leaf-solve penalty. The clustered-globals A/B (elastic vs fixed-k vs SFC, +`fast_local`)
+is now worth running with a diversity-trained leaf model. And the deployment recipe
+sharpens: **train the composition leaf model on a diverse geometric diet, not uniform.**
+
 ## Run log
 
 - 2026-07-01: Test 1 (blob eval, shallow model) complete. Clustered geometry is harder at
   every n (prior falsified); penalty is pure geometry shift (in-range at n=12), monotone in
   blob tightness. Elastic-k premise weakened but alive; data-diversity retrain is the pivot.
+- 2026-07-01: Test 2 (mixed-diet retrain) complete. Diversity nearly closes the blob penalty
+  (−3.6pp→−0.9pp at n=12), slightly improves uniform extrapolation (+0.014), no regression;
+  n remains a wall. Geometric diversity is a partial free substitute for depth. Elastic-k
+  premise restored.
