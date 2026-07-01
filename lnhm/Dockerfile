@@ -20,7 +20,16 @@ WORKDIR /workspace/lnhm
 
 # Runtime dependencies beyond torch (the CUDA torch build ships in the base image,
 # so we deliberately do NOT pip install torch here).
-RUN pip install --no-cache-dir "numpy>=1.24" "pyyaml>=6.0" "matplotlib>=3.7"
+RUN pip install --no-cache-dir "numpy>=1.24" "pyyaml>=6.0" "matplotlib>=3.7" "scipy>=1.11"
+
+# LKH-3: near-optimal labels for n>12 data generation (Held-Karp is memory-bound
+# above ~16) and near-optimal references. Puts the LKH binary on PATH.
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential curl ca-certificates \
+    && curl -fsSL http://akira.ruc.dk/~keld/research/LKH-3/LKH-3.0.13.tgz -o /tmp/LKH.tgz \
+    && tar xzf /tmp/LKH.tgz -C /tmp && make -s -C /tmp/LKH-3.0.13 \
+    && cp /tmp/LKH-3.0.13/LKH /usr/local/bin/LKH \
+    && rm -rf /tmp/LKH.tgz /tmp/LKH-3.0.13 /var/lib/apt/lists/*
+ENV LNHM_LKH_BINARY=/usr/local/bin/LKH
 
 # Project source (data/, model/, training/, analysis/, configs/, docker/).
 COPY . /workspace/lnhm

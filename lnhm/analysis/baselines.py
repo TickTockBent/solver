@@ -211,12 +211,16 @@ def lkh_tour(
     runs: int = 1,
     coordinate_scale: int = 1_000_000,
     workdir: Optional[str] = None,
+    max_trials: Optional[int] = None,
 ) -> List[int]:
     """Near-optimal tour via LKH-3. Requires the LKH binary on PATH (or `lkh_binary`).
 
     Coordinates are scaled to integers (TSPLIB EUC_2D rounds distances). The
     returned tour's true length should be recomputed with `tour_distance` on the
     original float coordinates, not trusted from LKH's integer objective.
+
+    `max_trials` caps LKH's local-search iterations; set it for large n, where the
+    default scales with problem size and can run effectively forever.
     """
     import shutil
     import subprocess
@@ -246,6 +250,8 @@ def lkh_tour(
         problem_file.write("EOF\n")
     with open(parameter_path, "w") as parameter_file:
         parameter_file.write(f"PROBLEM_FILE = {problem_path}\nRUNS = {runs}\nTOUR_FILE = {tour_path}\n")
+        if max_trials is not None:
+            parameter_file.write(f"MAX_TRIALS = {max_trials}\n")
 
     subprocess.run([lkh_binary, parameter_path], check=True, capture_output=True)
 

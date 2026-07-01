@@ -28,8 +28,15 @@ LNHM_DEVICE="${LNHM_DEVICE:-cuda}"
 LNHM_DATA_DIR="${LNHM_DATA_DIR:-$REPO_ROOT/data/phase0}"
 LNHM_OUTPUT_DIR="${LNHM_OUTPUT_DIR:-$REPO_ROOT/outputs}"
 LNHM_GENERATE_DATA="${LNHM_GENERATE_DATA:-auto}"        # auto | always | never
+LNHM_LKH_BINARY="${LNHM_LKH_BINARY:-LKH}"              # LKH-3 binary (labels n>12)
 LNHM_XLEVEL_ARGS="${LNHM_XLEVEL_ARGS:-}"                # extra args for cross_level.py
 LNHM_RESULT_UPLOAD_URL="${LNHM_RESULT_UPLOAD_URL:-}"    # optional: PUT target for results
+# Training run identity + model-size overrides (for level/capacity sweeps):
+LNHM_RUN_NAME="${LNHM_RUN_NAME:-}"
+LNHM_D_MODEL="${LNHM_D_MODEL:-}"
+LNHM_N_LAYERS="${LNHM_N_LAYERS:-}"
+LNHM_N_HEADS="${LNHM_N_HEADS:-}"
+LNHM_FF_DIM="${LNHM_FF_DIM:-}"
 
 mkdir -p "$LNHM_DATA_DIR" "$LNHM_OUTPUT_DIR"
 
@@ -44,9 +51,9 @@ case "$LNHM_GENERATE_DATA" in
   *)      [ -z "$(ls -A "$LNHM_DATA_DIR" 2>/dev/null || true)" ] && needs_generation=true ;;
 esac
 if [ "$needs_generation" = true ]; then
-  echo "--- generating dataset (levels: $LNHM_LEVELS) ---"
+  echo "--- generating dataset (levels: $LNHM_LEVELS; LKH for n>12) ---"
   # shellcheck disable=SC2086
-  python data/generate.py --output-dir "$LNHM_DATA_DIR" --levels $LNHM_LEVELS
+  python data/generate.py --output-dir "$LNHM_DATA_DIR" --levels $LNHM_LEVELS --lkh-binary "$LNHM_LKH_BINARY"
 else
   echo "--- using existing dataset ---"
 fi
@@ -63,6 +70,12 @@ PY
 case "$LNHM_TASK" in
   train)
     echo "--- training (curriculum) ---"
+    train_extra=()
+    [ -n "$LNHM_RUN_NAME" ] && train_extra+=(--run-name "$LNHM_RUN_NAME")
+    [ -n "$LNHM_D_MODEL" ] && train_extra+=(--d-model "$LNHM_D_MODEL")
+    [ -n "$LNHM_N_LAYERS" ] && train_extra+=(--n-encoder-layers "$LNHM_N_LAYERS")
+    [ -n "$LNHM_N_HEADS" ] && train_extra+=(--n-heads "$LNHM_N_HEADS")
+    [ -n "$LNHM_FF_DIM" ] && train_extra+=(--ff-dim "$LNHM_FF_DIM")
     # shellcheck disable=SC2086
     python training/train.py \
       --data-dir "$LNHM_DATA_DIR" \
@@ -71,11 +84,14 @@ case "$LNHM_TASK" in
       --max-epochs-per-level "$LNHM_MAX_EPOCHS" \
       --seed "$LNHM_SEED" \
       --device "$LNHM_DEVICE" \
-      --output-dir "$LNHM_OUTPUT_DIR"
-    echo "--- plotting ---"
+      --output-dir "$LNHM_OUTPUT_DIR" \
+      ${train_extra[@]+"${train_extra[@]}"}
+    # train.py writes to a per-run subdir; plot from the newest one.
+    latest_run="$(ls -td "$LNHM_OUTPUT_DIR"/*/ 2>/dev/null | head -1)"
+    echo "--- plotting ($latest_run) ---"
     python analysis/plot.py \
-      --metrics "$LNHM_OUTPUT_DIR/metrics.csv" \
-      --out "$LNHM_OUTPUT_DIR/accuracy_by_level.png" || echo "  (plot failed, continuing)"
+      --metrics "${latest_run}metrics.csv" \
+      --out "${latest_run}accuracy_by_level.png" || echo "  (plot failed, continuing)"
     ;;
   crosslevel)
     echo "--- cross-level A/B/C/D matrix ---"

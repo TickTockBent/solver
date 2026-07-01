@@ -65,6 +65,12 @@ def parse_arguments(argv: List[str]) -> argparse.Namespace:
     parser.add_argument("--grad-clip", type=float, default=1.0, help="Max grad norm; 0 disables.")
     parser.add_argument("--train-limit", type=int, default=None, help="Cap instances/level (smoke tests).")
     parser.add_argument("--val-limit", type=int, default=None, help="Cap val instances/level (smoke tests).")
+    # Range/sweep support: name each run and override model size from the CLI.
+    parser.add_argument("--run-name", default=None, help="Output subdir name (auto if omitted).")
+    parser.add_argument("--d-model", type=int, default=None)
+    parser.add_argument("--n-encoder-layers", type=int, default=None)
+    parser.add_argument("--n-heads", type=int, default=None)
+    parser.add_argument("--ff-dim", type=int, default=None)
     return parser.parse_args(argv)
 
 
@@ -82,10 +88,21 @@ def main(argv: List[str]) -> int:
     learning_rate = config["training"]["lr"]
     frontier_weight = config["curriculum"]["frontier_weight"]
 
+    # Model config with optional CLI size overrides (for capacity / level sweeps).
+    model_config = dict(config["model"])
+    for key, value in (("d_model", arguments.d_model), ("n_encoder_layers", arguments.n_encoder_layers),
+                       ("n_heads", arguments.n_heads), ("ff_dim", arguments.ff_dim)):
+        if value is not None:
+            model_config[key] = value
+
+    # Named output subdir so a range of runs (different levels/sizes/seeds) never clobber.
+    run_name = arguments.run_name or f"L{min(levels)}-{max(levels)}_d{model_config['d_model']}_s{arguments.seed}"
+    run_output_dir = os.path.join(arguments.output_dir, run_name)
+
     torch.manual_seed(arguments.seed)
     sampling_rng = np.random.default_rng(arguments.seed)
     device = resolve_device(arguments.device)
-    os.makedirs(arguments.output_dir, exist_ok=True)
+    os.makedirs(run_output_dir, exist_ok=True)
 
     print(f"Loading data for levels {levels} from {arguments.data_dir} ...")
     data_pool = CurriculumDataPool(
@@ -93,14 +110,15 @@ def main(argv: List[str]) -> int:
     )
     curriculum = AdditiveCurriculum(levels, warmup_levels, frontier_weight=frontier_weight)
 
-    model = LnhmModel.from_config(config["model"]).to(device)
+    model = LnhmModel.from_config(model_config).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
         optimizer, T_0=arguments.steps_per_epoch, T_mult=1
     )
     print(f"Model: {model.num_parameters()} params on {device}")
 
-    metrics_path = os.path.join(arguments.output_dir, "metrics.csv")
+    print(f"Run: {run_name}  ->  {run_output_dir}")
+    metrics_path = os.path.join(run_output_dir, "metrics.csv")
     metrics_file = open(metrics_path, "w", newline="")
     metrics_writer = csv.writer(metrics_file)
     metrics_writer.writerow(["global_epoch", "frontier_level", "level", "accuracy", "mean_gap", "worst_gap"])
@@ -165,8 +183,9 @@ def main(argv: List[str]) -> int:
         curriculum.advance()
 
     metrics_file.close()
-    checkpoint_path = os.path.join(arguments.output_dir, "model_final.pt")
-    torch.save(model.state_dict(), checkpoint_path)
+    checkpoint_path = os.path.join(run_output_dir, "model_final.pt")
+    torch.save({"state_dict": model.state_dict(), "model_config": model_config,
+                "levels": levels, "run_name": run_name}, checkpoint_path)
     elapsed = time.monotonic() - run_start
     print(f"\nDone in {elapsed:.1f}s. Metrics -> {metrics_path}  Checkpoint -> {checkpoint_path}")
     return 0

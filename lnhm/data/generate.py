@@ -38,7 +38,9 @@ import numpy as np
 # Allow `python data/generate.py` to find the sibling solver module regardless
 # of the current working directory.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from held_karp import brute_force, canonicalize_tour, held_karp  # noqa: E402
+from held_karp import brute_force, canonicalize_tour, held_karp, tour_distance  # noqa: E402
+# Project root on path so the LKH labeler (analysis.baselines) is importable for n>12.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Coordinates are rounded so stored instances are compact and exactly
 # reproducible; the solver runs on the rounded coordinates so the stored optimal
@@ -55,7 +57,11 @@ def default_split_counts(level: int) -> Tuple[int, int]:
         return 2_000, 500
     if level <= 7:
         return 10_000, 2_000
-    return 50_000, 5_000
+    if level <= 12:
+        return 50_000, 5_000
+    if level <= 16:
+        return 10_000, 2_000   # n=13-16: LKH-labeled
+    return 5_000, 1_000        # n=17-20: LKH-labeled, fewer (harder, slower)
 
 
 def instance_seed(level: int, split: str, index: int, base_seed: int) -> int:
@@ -69,12 +75,22 @@ def deterministic_instance_id(level: int, split: str, index: int, base_seed: int
     return str(uuid.UUID(bytes=digest))
 
 
-def generate_single_instance(task: Tuple[int, str, int, int]) -> Dict:
-    """Worker function: build one solved, canonicalized instance."""
-    level, split, index, base_seed = task
+def generate_single_instance(task: Tuple) -> Dict:
+    """Worker function: build one solved, canonicalized instance.
+
+    Solver per task: Held-Karp (exact, small n) or LKH-3 (near-optimal, feasible
+    at n=13-20 where Held-Karp gets memory-bound). 'auto' picks LKH for n>12.
+    """
+    level, split, index, base_seed, solver, lkh_binary = task
     rng = np.random.default_rng(instance_seed(level, split, index, base_seed))
     coordinates = np.round(rng.random((level, 2)), COORDINATE_DECIMALS)
-    optimal_tour, optimal_distance = held_karp(coordinates)
+    use_lkh = solver == "lkh" or (solver == "auto" and level > 12)
+    if use_lkh:
+        from analysis.baselines import lkh_tour
+        optimal_tour = lkh_tour(coordinates, lkh_binary=lkh_binary)
+        optimal_distance = tour_distance(coordinates, optimal_tour)
+    else:
+        optimal_tour, optimal_distance = held_karp(coordinates)
     canonical_tour = canonicalize_tour(optimal_tour)
     return {
         "id": deterministic_instance_id(level, split, index, base_seed),
@@ -92,11 +108,13 @@ def generate_split(
     base_seed: int,
     output_dir: str,
     num_workers: int,
+    solver: str,
+    lkh_binary: str,
 ) -> Tuple[str, int, float]:
     """Generate one level/split to gzipped JSONL. Returns (path, count, seconds)."""
     os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(output_dir, f"level_{level:02d}_{split}.jsonl.gz")
-    tasks = ((level, split, index, base_seed) for index in range(count))
+    tasks = ((level, split, index, base_seed, solver, lkh_binary) for index in range(count))
 
     start_time = time.monotonic()
     instances_written = 0
@@ -156,6 +174,13 @@ def parse_arguments(argv: List[str]) -> argparse.Namespace:
         help="Override the per-level validation instance count for all levels.",
     )
     parser.add_argument(
+        "--solver", choices=["auto", "held_karp", "lkh"], default="auto",
+        help="Label solver. 'auto' = Held-Karp for n<=12, LKH for n>12.",
+    )
+    parser.add_argument(
+        "--lkh-binary", default="LKH", help="Path to the LKH-3 binary (for n>12).",
+    )
+    parser.add_argument(
         "--cross-check", action="store_true",
         help="Validate Held-Karp against brute force, then exit without generating.",
     )
@@ -200,6 +225,7 @@ def main(argv: List[str]) -> int:
             path, written, seconds = generate_split(
                 level, split, count, arguments.base_seed,
                 arguments.output_dir, arguments.workers,
+                arguments.solver, arguments.lkh_binary,
             )
             rate = written / seconds if seconds > 0 else float("inf")
             print(

@@ -46,13 +46,21 @@ def make_model_solver(checkpoint_path: str, model_config: dict = None, device: s
     import yaml
     from model.lnhm import LnhmModel
 
+    torch_device = torch.device(device)
+    checkpoint = torch.load(checkpoint_path, map_location=torch_device)
+    if isinstance(checkpoint, dict) and "state_dict" in checkpoint:
+        # Self-describing checkpoint (train.py): config travels with the weights.
+        state_dict = checkpoint["state_dict"]
+        if model_config is None:
+            model_config = checkpoint.get("model_config")
+    else:
+        state_dict = checkpoint  # legacy: a bare state_dict
     if model_config is None:
         with open(os.path.join(PROJECT_ROOT, "configs/phase0.yaml")) as config_file:
             model_config = yaml.safe_load(config_file)["model"]
 
-    torch_device = torch.device(device)
     model = LnhmModel.from_config(model_config)
-    model.load_state_dict(torch.load(checkpoint_path, map_location=torch_device))
+    model.load_state_dict(state_dict)
     model.to(torch_device).eval()
 
     def solve(cluster_coordinates: np.ndarray) -> List[int]:

@@ -97,6 +97,34 @@ docker run --gpus all `
 Override the matrix with e.g.
 `-e LNHM_XLEVEL_ARGS="--anchors 5 9 11 --seeds 0 1 2 3 4 --total-steps 2500"`.
 
+**Training a range of models (level / capacity sweep).** Each run writes to its own
+subdir under `outputs/<run-name>/` (auto-named `L<min>-<max>_d<d_model>_s<seed>` if
+`LNHM_RUN_NAME` is unset), so runs never clobber. Set the level range and/or model
+size per run:
+
+```powershell
+# extend the curriculum to n=20 (image builds LKH, so it labels n>12 itself)
+docker run --gpus all -e LNHM_TASK=train `
+  -e LNHM_LEVELS="3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20" `
+  -e LNHM_RUN_NAME=L3-20_d128 `
+  -v ${PWD}/outputs:/workspace/outputs lnhm-phase0
+
+# a bigger model (capacity sweep): d_model=256, 4 layers
+docker run --gpus all -e LNHM_TASK=train -e LNHM_D_MODEL=256 -e LNHM_N_LAYERS=4 `
+  -e LNHM_RUN_NAME=L3-12_d256 `
+  -v ${PWD}/outputs:/workspace/outputs lnhm-phase0
+```
+
+Loop those `docker run`s (varying `LNHM_LEVELS` / `LNHM_D_MODEL` / `LNHM_RUN_NAME`)
+to produce a family of models.
+
+**Exporting the trained model.** Each run's checkpoint is
+`outputs/<run-name>/model_final.pt` on the host (via the mounted volume) — a
+self-describing dict (`state_dict` + `model_config` + `levels`), so the loader
+rebuilds the right architecture automatically. Copy it back to the source host
+(it's ~3–11 MB), or set `-e LNHM_RESULT_UPLOAD_URL=<PUT-target>` to have the run
+upload its results tarball itself.
+
 (PowerShell: backtick line-continuation, `${PWD}`. cmd.exe: `%cd%`. bash/WSL:
 `\` and `$PWD`.)
 
@@ -109,6 +137,9 @@ For providers that pull a prebuilt image (vast.ai-native, RunPod), additionally
 |-----|---------|---------|
 | `LNHM_TASK` | `train` | `train` (curriculum) or `crosslevel` (A/B/C/D matrix) |
 | `LNHM_XLEVEL_ARGS` | — | extra args passed to `cross_level.py` (anchors/seeds/steps) |
+| `LNHM_RUN_NAME` | auto | names the `outputs/<run-name>/` subdir (sweeps don't clobber) |
+| `LNHM_D_MODEL` / `LNHM_N_LAYERS` / `LNHM_N_HEADS` / `LNHM_FF_DIM` | config | model-size overrides (capacity sweep) |
+| `LNHM_LKH_BINARY` | `LKH` | LKH-3 binary (labels n>12 during data-gen) |
 | `LNHM_LEVELS` | `3 4 … 12` | curriculum levels |
 | `LNHM_STEPS_PER_EPOCH` | `100` | optimizer steps per epoch |
 | `LNHM_MAX_EPOCHS` | `150` | max epochs per level before forced advance |
