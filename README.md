@@ -102,3 +102,9 @@ one-shot and n=1M by composition.
 Not tested: the extrapolation-ratio law (does train-to-N cover 1.5N at every
 N?), and variant transfer on problems without cheap local-search moves, which
 is where the factory thesis now lives or dies.
+
+To be explicit about that last point: the surviving thesis is currently 100%
+hypothesis and 0% measurement. This repo measures where learned constructors
+fail and why; it does not measure where they win, and nothing here rules out
+the answer being "nowhere." The landscape framing earns its place by being
+falsifiable, not by being supported.

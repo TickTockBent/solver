@@ -1,4 +1,4 @@
-# LNHM — Phase 0
+# LNHM — the code
 
 **Large NP-Hard Model.** A method ("solver factory") for producing a bespoke
 neural solver per NP-hard problem class via curriculum bootstrapping from small,
@@ -7,21 +7,28 @@ exactly-solvable instances toward large ones. The central per-class bet is
 small n are the same at large n, so training on harder instances retroactively
 improves performance on easier ones (cross-level reinforcement).
 
-Phase 0 tests the smallest version of that bet on the friendliest class,
-**Euclidean TSP**. The full specification is in
-[`../phase0/phase0-spec.md`](../phase0/phase0-spec.md).
+This package began as the Phase 0 pipeline and now serves all four phases. For
+the story and findings, start at the [root README](../README.md); the specs and
+results live in `../phase0/` through `../phase3/`. This file covers setup and
+the operational commands. The command reference for held-out evals is
+[`../phase3/HARNESS.md`](../phase3/HARNESS.md).
 
-## Status
+## What's here (all implemented)
 
-| Component | State |
-|-----------|-------|
-| Held-Karp exact solver + brute-force oracle (`data/held_karp.py`) | **implemented** |
-| Instance generation, parallel + reproducible (`data/generate.py`) | **implemented** |
-| Data pool + mixed-n padded collation (`data/dataset.py`) | **implemented** |
-| Model — encoder, decoder, wrapper (`model/`) | **implemented** (overfits real tours to 100%) |
-| Curriculum, training loop, evaluation (`training/`) | **implemented** |
-| Accuracy-by-level plot (`analysis/plot.py`) | **implemented** |
-| Cross-level reinforcement experiment (`analysis/cross_level.py`) | stub (next) |
+| Component | Serves |
+|-----------|--------|
+| Held-Karp exact solver + enumeration oracle (`data/held_karp.py`) | all phases |
+| Instance generators: uniform (`data/generate.py`), clustered (`data/generate_clustered.py`), mixed-diet (`data/generate_mixed.py`) | Phases 0-3 |
+| Data pool + mixed-n padded collation (`data/dataset.py`) | training |
+| Model: encoder, decoder, wrapper (`model/`) | all phases |
+| Curriculum, training loop, evaluation (`training/`) | Phases 0, 2, 3 |
+| Cross-level A/B/C/D experiment (`analysis/cross_level.py`) | Phase 0 |
+| Classical baselines + LKH wrapper (`analysis/baselines.py`) | Phases 1-3 |
+| Recursive composition pipeline (`analysis/compose.py`) | Phase 1 |
+| Compiled 2-opt + Or-opt cleanup (`analysis/fast_local_search.py`) | Phases 1, 3 |
+| Cost/quality frontier runner (`analysis/frontier.py`) | Phase 1 |
+| Held-out eval, greedy + best-of-k (`analysis/eval_heldout.py`) | Phases 2, 3 |
+| Kill-suite scripts (`analysis/t1_ablation.py`, `analysis/t5_fixedk_gate.py`) | Phase 3 |
 
 ## Setup
 
@@ -101,9 +108,9 @@ Notes:
 
 ```
 lnhm/
-├── data/        # generation + solvers + dataset (implemented)
-├── model/       # encoder, decoder, full model (stub)
-├── training/    # train loop, curriculum, evaluate (stub)
-├── analysis/    # cross-level experiment, plotting (stub)
+├── data/        # generators (uniform/clustered/mixed) + exact solvers + dataset
+├── model/       # encoder, decoder, full model
+├── training/    # train loop, curriculum, evaluate
+├── analysis/    # baselines, composition, fast_local, frontier, evals, kill-suite
 └── configs/     # phase0.yaml
 ```

@@ -5,11 +5,13 @@ stitch the sub-tours into one global cycle via greedy port-joining, then
 optionally clean up the boundary seams with 2-opt.
 
 The local solver is pluggable: Held-Karp gives exact small-cluster solves (used
-to isolate stitching quality from model quality), and the LNHM model slots in for
-the full experiment. Single-level for now; recursive cluster-ordering (solving the
-inter-cluster problem with the same machinery) is a marked extension.
+to isolate stitching quality from model quality), and the LNHM model slots in via
+make_model_solver (batched across a level with batch_local_solver). Cluster
+ordering is done by recursively composing the cluster centroids (implemented in
+compose_solve, log_k(n) depth); stitching uses DP-optimal port selection
+(stitch_dp); cleanup options include the compiled fast_local search.
 
-See phase1/phase1-spec.md.
+See phase1/phase1-spec.md and phase1/phase1-results.md.
 """
 from __future__ import annotations
 
