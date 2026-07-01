@@ -44,12 +44,12 @@ def build_pipelines(k_caps: List[int], model_batch_solver, scale: bool = False) 
     keeps only the near-linear ones, for large-n runs. Model composition uses the
     batched local solver (one padded forward pass per level)."""
     pipelines: List[Pipeline] = [
-        ("nearest_neighbor", lambda c: nearest_neighbor(c)),
         ("space_filling", lambda c: space_filling_curve(c)),
         ("SFC+neighbor2opt", lambda c: neighbor_two_opt(c, space_filling_curve(c))),
     ]
-    if not scale:
+    if not scale:  # these are O(n^2) (nearest_neighbor, full 2-opt) -- not for huge n
         pipelines += [
+            ("nearest_neighbor", lambda c: nearest_neighbor(c)),
             ("NN+2opt", lambda c: two_opt(c, nearest_neighbor(c))),
             ("SFC+2opt", lambda c: two_opt(c, space_filling_curve(c))),
             ("NN+neighbor2opt", lambda c: neighbor_two_opt(c, nearest_neighbor(c))),
