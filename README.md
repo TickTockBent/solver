@@ -74,8 +74,12 @@ the results that scored them; the git history is the provenance.
 
 ## Status and scope
 
-Tested: Euclidean TSP, uniform and clustered geometries, models up to
-[T9: 2.8M params], instance sizes to n=30 one-shot and n=1M by composition.
+Tested: Euclidean TSP, uniform and clustered geometries, models up to 2.8M
+params (a 4x capacity probe changed no verdict: greedy extrapolation moved by
+less than 0.003, so the one-shot results are properties of the training
+distribution, not parameter count; extra capacity only sped in-range
+convergence and improved OOD sampling calibration), instance sizes to n=30
+one-shot and n=1M by composition.
 Not tested: the extrapolation-ratio law (does train-to-N cover 1.5N at every
 N?), and variant transfer on problems without cheap local-search moves, which
 is where the factory thesis now lives or dies.

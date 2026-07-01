@@ -23,8 +23,12 @@ leaf-solver ablation spanning random permutations, nearest-neighbor, the model,
 and an exact Held-Karp oracle shows all four reach the same tour quality after
 a standard 2-opt/Or-opt cleanup: constructor quality is erased by local search,
 so no constructor of any capacity can earn its compute on this landscape. The
-oracle arm answers the scale objection directly. [T9: a 4x-capacity model
-changes none of the verdicts / revise per result.]
+oracle arm answers the scale objection directly, and a 4x-capacity
+replication changes none of the verdicts: greedy extrapolation moves by less
+than 0.003, so the observed effects are properties of the training
+distribution rather than parameter count. Added capacity only accelerates
+in-range convergence and improves out-of-distribution sampling calibration,
+narrowing the best-of-k inversion without improving the argmax.
 
 Two results are positive. Extending the training curriculum from n ≤ 12 to
 n ≤ 20 yields one-shot greedy tours at p = 0.957 (gap ≈ 4.5%) at n = 30, 1.5x
