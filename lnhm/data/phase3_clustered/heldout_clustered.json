@@ -1,0 +1,61 @@
+{
+  "checkpoint": "runs/full/model_selfdesc.pt",
+  "levels": {
+    "8": {
+      "n_instances": 200,
+      "greedy_mean_gap": 0.02096647210419178,
+      "p_greedy": 0.979464054107666,
+      "samples": 16,
+      "sampled_mean_gap": 0.00738323200494051,
+      "p_sampled": 0.9926708936691284
+    },
+    "10": {
+      "n_instances": 200,
+      "greedy_mean_gap": 0.023915773257613182,
+      "p_greedy": 0.9766428470611572,
+      "samples": 16,
+      "sampled_mean_gap": 0.02180921845138073,
+      "p_sampled": 0.9786562919616699
+    },
+    "12": {
+      "n_instances": 200,
+      "greedy_mean_gap": 0.040620218962430954,
+      "p_greedy": 0.9609653949737549,
+      "samples": 16,
+      "sampled_mean_gap": 0.04293390363454819,
+      "p_sampled": 0.9588335156440735
+    },
+    "16": {
+      "n_instances": 200,
+      "greedy_mean_gap": 0.0702190026640892,
+      "p_greedy": 0.9343881607055664,
+      "samples": 16,
+      "sampled_mean_gap": 0.10212334990501404,
+      "p_sampled": 0.9073394536972046
+    },
+    "20": {
+      "n_instances": 200,
+      "greedy_mean_gap": 0.0967298299074173,
+      "p_greedy": 0.9118015766143799,
+      "samples": 16,
+      "sampled_mean_gap": 0.17637509107589722,
+      "p_sampled": 0.850068986415863
+    },
+    "25": {
+      "n_instances": 200,
+      "greedy_mean_gap": 0.11663112789392471,
+      "p_greedy": 0.8955508470535278,
+      "samples": 16,
+      "sampled_mean_gap": 0.26953402161598206,
+      "p_sampled": 0.7876905798912048
+    },
+    "30": {
+      "n_instances": 200,
+      "greedy_mean_gap": 0.15620557963848114,
+      "p_greedy": 0.864898145198822,
+      "samples": 16,
+      "sampled_mean_gap": 0.3781835436820984,
+      "p_sampled": 0.7255927324295044
+    }
+  }
+}
