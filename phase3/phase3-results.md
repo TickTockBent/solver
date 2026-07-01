@@ -169,6 +169,117 @@ leaf-solve penalty. The clustered-globals A/B (elastic vs fixed-k vs SFC, +`fast
 is now worth running with a diversity-trained leaf model. And the deployment recipe
 sharpens: **train the composition leaf model on a diverse geometric diet, not uniform.**
 
+_Superseded by T5-Q2 below: the fixed-k damage gate shows fixed-k loses ~nothing on
+globby data, so elastic-k is not justified and the A/B need not be built. Test 2's
+"premise restored" was about the leaf's blob competence — which T1 then showed is moot for
+static composition. The diversity-training result stands on its own as a
+distribution-robustness finding (T5-Q1), just not as a reason to build elastic-k._
+
+---
+
+# Adversarial suite (T1–T8) — results so far
+
+Running the pre-registered kill-suite (`lnhm-phase3-test-suite.md`). Each test states its
+verdict rule before the run. Kill-table framing: a failure retires a specific claim, not
+the methodology, the p/f ruler, the depth-extrapolation science, or the compiled kernel.
+
+## T1 — trivial local-solver ablation (null hypothesis): CONFIRMED INERT
+
+Held the composition pipeline fixed (SFC partition, k_cap=10, `fast_local` cleanup) and
+swapped ONLY the leaf solver. Uniform globals, 3 seeds, BHH reference.
+`analysis/t1_ablation.py`. p_raw = pre-cleanup proximity, p_clean = post-cleanup, f =
+cpu-core-seconds per 1e6 cities / p.
+
+| n | solver | p_raw | p_clean | f |
+|---|---|---|---|---|
+| 10k | random | 0.386 | 0.931 | 135 |
+| 10k | nn | 0.641 | 0.929 | 115 |
+| 10k | model | 0.660 | 0.928 | 243 |
+| 10k | held_karp | 0.666 | 0.926 | 462 |
+| 100k | random | 0.386 | 0.936 | 127 |
+| 100k | nn | 0.636 | 0.935 | 122 |
+| 100k | model | 0.657 | 0.932 | 243 |
+| 100k | held_karp | 0.663 | 0.933 | 463 |
+
+**Verdict rule:** p(model) − p(NN) < 0.005 after cleanup ⇒ model inert. Δp = **−0.0008
+(10k), −0.0031 (100k) → INERT.** Pre-cleanup the leaf matters enormously (random 0.39 →
+model/HK 0.66); post-cleanup all four collapse to ~0.93 and the order *inverts* — a random
+permutation leaf reaches the same final tour as the model, which lands marginally *below*
+nearest-neighbor at ~2× the cpu (Pareto-dominated). `fast_local` drives any reasonable —
+even random — start to the same local optimum, so leaf quality is irrelevant to the static
+result. Retires exactly one claim: the model's role in static composition.
+
+## T5-Q2 — fixed-k damage gate (elastic-k go/no-go): NOT JUSTIFIED
+
+Since T1 proved the leaf irrelevant, any excess loss of fixed-k composition on globby data
+must come from the PARTITION (seams cut through blobs). Held leaf = Held-Karp, cleanup =
+`fast_local`; compared fixed-k composition vs partition-free SFC+fast and NN+fast on uniform
+vs clustered globals (tight ~40-pt blobs, larger than k=10 — the seam-damage scenario).
+`analysis/t5_fixedk_gate.py`. n=10k, 5 seeds. `vs_best%` = tour length over the best
+partition-free baseline.
+
+| dist | pipeline | mean len | cpu_s | vs_best% |
+|---|---|---|---|---|
+| uniform | composition | 76.899 | 4.41 | +2.16% |
+| uniform | sfc_fast | 77.688 | 0.04 | +3.21% |
+| uniform | nn_fast | 75.274 | 4.28 | +0.00% |
+| clustered | composition | 56.524 | 4.30 | +2.19% |
+| clustered | sfc_fast | 56.934 | 0.03 | +2.94% |
+| clustered | nn_fast | 55.310 | 4.22 | +0.00% |
+
+**Verdict rule:** fixed-k damage < ~1.1pp ⇒ elastic-k not justified. Excess damage on
+clustered vs uniform is **+0.03pp** (composition vs best baseline: +2.19% vs +2.16%) — and
+against SFC+fast directly (the true partition isolation: same cleanup, only the k=10 seams
+differ) composition *beats* SFC on both distributions (−0.72% clustered, −1.02% uniform),
+excess **+0.30pp**. Either way far under the gate → **elastic-k is not justified by data.**
+Mechanism: the seams fixed-k cuts through a dense blob are *local* (blob points are mutually
+near), and `fast_local`'s neighbor-2opt/Or-opt repairs local damage regardless of source —
+there is no un-repairable structural loss for elastic-k to recover. This is the World-A
+resolution of the T1 question, and it preemptively closes the clustered-globals A/B.
+
+## T2 (part 1) — greedy decode table (prediction vs search): HEADLINE HOLDS, MAGNITUDE CORRECTED
+
+Re-assembled the Phase 2 held-out `p_greedy` (already computed by `eval_heldout`, no
+re-inference), mean over 2 seeds:
+
+| cell | n5 | n8 | n10 | n12 | n16 | n20 | n25 | n30 |
+|---|---|---|---|---|---|---|---|---|
+| C00 control | 0.998 | 0.994 | 0.986 | 0.977 | 0.961 | 0.944 | 0.924 | 0.906 |
+| C10 depth | 0.999 | 0.998 | 0.996 | 0.994 | 0.989 | 0.980 | 0.969 | 0.957 |
+| C01 data | 0.999 | 0.994 | 0.985 | 0.978 | 0.960 | 0.944 | 0.924 | 0.906 |
+| C11 both | 0.999 | 0.998 | 0.996 | 0.994 | 0.988 | 0.980 | 0.970 | 0.959 |
+
+**Verdict rule:** greedy depth p ≥ 0.94 at n=30 ⇒ extrapolation is model-borne. Depth greedy
+n=30 = **0.957 ≥ 0.94 → PASSES.** Near-frontier one-shot *prediction* to n=30 confirmed;
+the product claim survives the search-vs-prediction test.
+
+But greedy deflates the *magnitude* of the depth advantage the sampled basis reported:
+
+| n | Δ_depth **sampled** | Δ_depth **greedy** |
+|---|---|---|
+| 16 | +0.028 | +0.028 |
+| 20 | +0.069 | +0.036 |
+| 25 | +0.127 | +0.046 |
+| 30 | **+0.176** | **+0.051** |
+
+The control's sampled "collapse" (0.799 at n=30) was largely a sampling artifact: control
+greedy n=30 = 0.906, so best-of-16 *hurt* the control by −0.107 (16 noisy draws off a
+miscalibrated model, all worse than its greedy argmax) while it *helped* depth by +0.018.
+Honest restatement: depth's one-shot prediction advantage at n=30 is **+0.051, not +0.176**.
+Both models degrade gracefully in prediction; depth degrades more gracefully AND keeps a
+usable sampling distribution where the control loses one — a real but separate property from
+prediction quality. Data inert and interaction ≈ 0 on greedy too (robust to decode mode).
+Part 2 (best-of-k curve at n=25/30, k∈{1,2,4,8,16}) pending on the GPU box.
+
+## Runnable-vs-remote status
+
+- **Done locally (this box, CPU):** T1, T5-Q2, T2 part 1 (re-assemble only).
+- **Needs the depth checkpoint / GPU box:** T2 part 2 (best-of-k curve); full-strength
+  T3/T5-Q1 (price the *depth* model — local models collapse at n=30).
+- **Heavy builds, not started:** T3 (compute-matched classical rows), T4 (provisioning law;
+  needs Concorde 21–30), T6 (dynamic vs incremental repair — where the thesis lives),
+  T7 (edge-feature model + asymmetric TSP — the moat test), T8 (data floor).
+
 ## Run log
 
 - 2026-07-01: Test 1 (blob eval, shallow model) complete. Clustered geometry is harder at
@@ -178,3 +289,12 @@ sharpens: **train the composition leaf model on a diverse geometric diet, not un
   (−3.6pp→−0.9pp at n=12), slightly improves uniform extrapolation (+0.014), no regression;
   n remains a wall. Geometric diversity is a partial free substitute for depth. Elastic-k
   premise restored.
+- 2026-07-01: T1 (local-solver ablation) complete. Model INERT in static composition
+  (Δp vs NN = −0.001/−0.003 after cleanup, Pareto-dominated). Leaf irrelevant post-cleanup.
+- 2026-07-01: T5-Q2 (fixed-k damage gate) complete. Excess fixed-k damage on globby data
+  ≈ 0 (+0.03pp vs best baseline). Elastic-k NOT justified; cleanup repairs local blob seams.
+  Supersedes the Test-2 recommendation to build the clustered-globals A/B.
+- 2026-07-01: T2 part 1 (greedy table) complete. Depth greedy n=30 = 0.957 ≥ 0.94 → PASSES;
+  extrapolation is model-borne. But sampled overstated depth's advantage ~3.5× (control's
+  sampled collapse was a best-of-16 artifact); true prediction edge at n=30 is +0.051. Part 2
+  (best-of-k curve) pending.
