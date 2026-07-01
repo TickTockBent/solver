@@ -63,7 +63,7 @@ cpu-seconds exceed their wall-seconds; the single-threaded local-search cleanup 
 cpu ≈ wall. (Caveat: LKH is a subprocess and is not counted; fine, since it is
 only ever the untimed reference, never a timed method.)
 
-_Historical note: the two tables above (the original p/f sweep and the million-city
+_Historical note: the two tables below (the original p/f sweep and the million-city
 row) were measured on **wall-clock**. For their single-threaded pure-Python cleanups
 that ≈ cpu-seconds when uncontended, but the compose construction fans out, so their
 compose-`f` slightly understates true compute cost. The "Kernel rewrite" section

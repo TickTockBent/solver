@@ -290,6 +290,54 @@ to bank the full headline. The product line: **one-shot ≈ 0.958 at n=30; the 0
 headline is a 16× compute premium for ~2pp**, exactly the latency caveat the pre-registration
 flagged.
 
+## T9 — capacity probe: is anything here capacity-bound? Mostly no.
+
+Question: are the one-shot results (depth extrapolation, diversity) properties of the
+training regime or of the 710K parameter budget? Method: same mixed diet
+(`data/phase3_mixed`, levels 3–12, 4k/level, seed 0), same convergence protocol,
+architecture scaled 4× (d_model 256, ff 1024, same 3 layers / 8 heads; ~2.8M params).
+Trained on CPU: 24 epochs / 2400 steps / 815s, vs 32 epochs / 3200 steps / 589s for the
+710K mixed model. Evaluated identically on both held-out arms, 200/level. Verdict rules
+and priors were stated in-session before the run: (a) if greedy extrapolation gain at
+n=16–30 is < 0.01, capacity buys no reach; (b) does the n=12 convergence wall soften;
+(c) does the residual blob penalty close.
+
+**Both arms, greedy / sampled p, 710K → 2.8M:**
+
+| n | uniform greedy | uniform sampled | clustered greedy | clustered sampled |
+|---|---|---|---|---|
+| 8  | 0.994 → 0.995 | 1.000 → 1.000 | 0.994 → 0.993 | 0.999 → 0.999 |
+| 10 | 0.984 → 0.985 | 0.999 → 0.999 | 0.986 → 0.986 | 0.996 → 0.997 |
+| 12 | 0.982 → 0.977 | 0.996 → 0.997 | 0.975 → 0.979 | 0.987 → 0.988 |
+| 16 | 0.960 → 0.960 | 0.975 → 0.980 | 0.964 → 0.962 | 0.952 → 0.958 |
+| 20 | 0.939 → 0.938 | 0.938 → 0.945 | 0.935 → 0.938 | 0.909 → 0.914 |
+| 25 | 0.924 → 0.922 | 0.870 → 0.897 | 0.917 → 0.921 | 0.855 → 0.863 |
+| 30 | 0.909 → 0.907 | 0.813 → 0.844 | 0.893 → 0.900 | 0.794 → 0.808 |
+
+Readouts against the rules:
+
+1. **(a) Capacity buys no extrapolation reach.** Greedy uniform at n=16–30: Δ = +0.000,
+   −0.001, −0.002, −0.002. An order of magnitude under the 0.01 rule. The depth and
+   diversity results are regime-bound, not capacity-bound, at ≤2.8M params. This is the
+   scale answer for the paper: on top of the T1 oracle row, a 4× model changes no verdict.
+2. **(b) The n=12 wall is a convergence effect, and it softens.** The 710K model spent
+   ~8 epochs grinding out n=12; the 2.8M model cleared it in ~3 (frontier reached n=12 at
+   epoch 21, converged at 24). Capacity binds for in-range convergence speed only. Texture:
+   the big model's n=5 breakthrough came later (11 epochs at that frontier vs ~5), then
+   cascaded faster.
+3. **(c) Blob residual: drifts toward zero, within noise.** Greedy penalty
+   (uniform − clustered): 0.007 → −0.002 at n=12, 0.016 → 0.007 at n=30, at 200
+   instances/level. Diversity had already done the work; capacity adds nothing measurable.
+
+One finding nobody pre-registered: **capacity improves OOD sampling calibration without
+improving the argmax.** Uniform n=30 sampled rose 0.813 → 0.844 while greedy sat still;
+the best-of-16 inversion gap shrank 0.096 → 0.063. Scale buys a better-calibrated sampling
+distribution, not more competence. Corollary for the OOD detector: its magnitude measures
+miscalibration, and capacity narrows it from the calibration side only.
+
+Caveat: single seed, one capacity step (4×). Enough to bound the paper's claims; a
+capacity *law* would need more points.
+
 ## Runnable-vs-remote status
 
 - **Done locally (this box, CPU):** T1, T5-Q2, T2 part 1 (re-assemble only).
@@ -319,3 +367,7 @@ flagged.
 - 2026-07-01: T2 part 2 (best-of-k curve) complete. Search starts underwater (k=1 < greedy),
   breaks even at k≈4, and best-of-16 adds only +0.019 over greedy at n=30 (still rising).
   Extrapolation is model-borne; the sampled headline is a 16× compute premium for ~2pp. T2 closed.
+- 2026-07-01: T9 (capacity probe, 2.8M vs 710K, same mixed diet) complete. Greedy
+  extrapolation Δ < 0.003 at n=16–30 → regime-bound, not capacity-bound. n=12 wall softens
+  (~8 epochs → ~3); blob residual within noise; OOD sampling calibration improves with scale
+  while the argmax does not (inversion gap 0.096 → 0.063 at n=30).
