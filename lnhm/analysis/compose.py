@@ -114,17 +114,12 @@ def partition_median(coordinates: np.ndarray, k_cap: int) -> List[List[int]]:
 # --------------------------------------------------------------------------- #
 # Stitching                                                                    #
 # --------------------------------------------------------------------------- #
-def _order_clusters_by_tsp(coordinates: np.ndarray, clusters: List[List[int]]) -> List[int]:
-    """Visiting order for the clusters = a TSP over their centroids.
-
-    For a moderate number of clusters, NN + full 2-opt (both O(m^2)). Above a
-    threshold (e.g. the ~100k clusters of a million-point instance) that is
-    infeasible, so fall back to the near-linear SFC + neighbor-2-opt ordering."""
-    centroids = np.asarray([coordinates[cluster].mean(axis=0) for cluster in clusters])
-    num_clusters = len(centroids)
-    if num_clusters <= 2000:
-        return two_opt(centroids, nearest_neighbor(centroids))
-    return neighbor_two_opt(centroids, space_filling_curve(centroids))
+def _quick_solver(points: np.ndarray) -> List[int]:
+    """Fast near-optimal solver for the small groups at the base of the ordering
+    recursion (NN + 2-opt; both O(m^2) but m is tiny here)."""
+    if len(points) <= 3:
+        return list(range(len(points)))
+    return two_opt(points, nearest_neighbor(points))
 
 
 def _cut_options(cycle: List[int]) -> List[Tuple[int, int, List[int]]]:
@@ -212,17 +207,24 @@ def compose_solve(
     coordinates = np.asarray(coordinates, dtype=np.float64)
     num_cities = len(coordinates)
 
+    # Base case (and the bottom of the recursion below): small enough to solve directly.
+    if num_cities <= k_cap:
+        return local_solver(coordinates)
+
     clusters = partitioner(coordinates, k_cap)
     cluster_cycles: List[List[int]] = []
     for cluster in clusters:
         local_order = local_solver(coordinates[cluster])
         cluster_cycles.append([cluster[i] for i in local_order])
 
-    if len(clusters) == 1:
-        global_tour, seam_positions = list(cluster_cycles[0]), set()
-    else:
-        cluster_order = _order_clusters_by_tsp(coordinates, clusters)
-        global_tour, seam_positions = stitch_dp(coordinates, cluster_cycles, cluster_order)
+    # Order the clusters by RECURSIVELY composing their centroids: the centroid TSP
+    # is the same problem one level up, so the solver calls itself -- log_k(n) depth,
+    # O(n) total, no O(m^2) blow-up. The recursion uses the fast base solver and no
+    # cleanup; we only need the cluster visiting order here.
+    centroids = np.asarray([coordinates[cluster].mean(axis=0) for cluster in clusters])
+    cluster_order = compose_solve(centroids, k_cap, local_solver=_quick_solver,
+                                  partitioner=partition_space_filling, cleanup="none")
+    global_tour, seam_positions = stitch_dp(coordinates, cluster_cycles, cluster_order)
 
     if cleanup == "none":
         pass
