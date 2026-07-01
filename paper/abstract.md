@@ -13,9 +13,9 @@ Negative and Positive Results for Neural TSP Solvers at Small Scale
 Learned construction heuristics for combinatorial optimization are usually
 evaluated against classical constructors. We instead ask whether they survive
 classical *improvement*. Using a 710K-parameter transformer trained by
-curriculum on exactly-solved Euclidean TSP instances (n ≤ 12), we pre-registered
-predictions and controls for each claim before measuring it, and we publish the
-git history as provenance.
+curriculum on exactly-solved Euclidean TSP instances (n ≤ 12), we registered
+predictions and verdict rules before their measurements and publish the
+repository, with its commit history, as notebook-grade provenance.
 
 Three results are negative with a common mechanism. Recursive decomposition
 lets the tiny model produce valid million-city tours in minutes, but a
