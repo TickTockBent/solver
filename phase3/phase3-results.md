@@ -147,12 +147,19 @@ free, but does not replace depth.
 
 ## Prediction scorecard (called before the eval, for the record)
 
-- **n=12 clustered:** Claude 0.985 / user ≥0.99 / **actual 0.987** — Claude near-exact.
-- **Clustered n=30 (the tell-tale):** Claude "measurable lift ~0.78, not flat" / user "still
-  collapses (flat)" / **actual 0.794 (+0.068)** — Claude's "geometry partially transfers
-  across size" confirmed; still a collapse in absolute terms (user right on that).
-- **Uniform extrapolation:** Claude "−0.02 regression" / user "holds within 0.005" /
-  **actual +0.014** — both wrong on sign/magnitude; neither predicted the improvement.
+_Attribution corrected 2026-07-01: an earlier version of this section had the two
+predictors swapped. Correct record, per the conversation where the bets were made:_
+
+- **n=12 clustered:** WS 0.985 / Claude ≥0.99 / **actual 0.987** — WS near-exact;
+  Claude's full-parity call just missed.
+- **Clustered n=30 (the tell-tale):** WS "measurable lift, ~0.78 — blob edge structure is
+  n-independent" / Claude "flat, ≈0.726 — only depth fixes n" / **actual 0.794 (+0.068)** —
+  WS confirmed: geometry familiarity partially transfers across size. Still a collapse in
+  absolute terms on the sampled basis (Claude right on that much).
+- **Uniform extrapolation:** WS "−0.02 regression (capacity split)" / Claude "holds within
+  0.005" / **actual +0.014** — WS wrong on direction; Claude right that there is no
+  regression but outside the stated band. Neither predicted the *improvement*, which is
+  the real finding (see Mechanism above) — and it follows from WS's own n=30 mechanism.
 
 ## Verdict for elastic-k
 
