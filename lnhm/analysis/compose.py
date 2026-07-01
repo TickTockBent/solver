@@ -22,7 +22,7 @@ import numpy as np
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
 from data.held_karp import held_karp, tour_distance  # noqa: E402
-from analysis.baselines import space_filling_curve, two_opt  # noqa: E402
+from analysis.baselines import nearest_neighbor, space_filling_curve, two_opt  # noqa: E402
 
 # A local solver maps cluster coordinates (m, 2) -> a visiting order of 0..m-1.
 LocalSolver = Callable[[np.ndarray], List[int]]
@@ -106,47 +106,72 @@ def partition_median(coordinates: np.ndarray, k_cap: int) -> List[List[int]]:
 # --------------------------------------------------------------------------- #
 # Stitching                                                                    #
 # --------------------------------------------------------------------------- #
-def _open_cycle_at_longest_edge(global_indices: List[int], local_order: List[int],
-                                coordinates: np.ndarray) -> List[int]:
-    """Turn a cluster's cyclic sub-tour into a path by cutting its longest edge.
+def _order_clusters_by_tsp(coordinates: np.ndarray, clusters: List[List[int]]) -> List[int]:
+    """Visiting order for the clusters = a TSP over their centroids (NN + 2-opt).
 
-    The two path endpoints become the cluster's natural ports for stitching.
-    """
-    cyclic = [global_indices[local] for local in local_order]
-    length = len(cyclic)
-    if length <= 2:
-        return cyclic
-    worst_distance, worst_position = -1.0, 0
-    for k in range(length):
-        a = cyclic[k]
-        b = cyclic[(k + 1) % length]
-        edge = float(np.linalg.norm(coordinates[a] - coordinates[b]))
-        if edge > worst_distance:
-            worst_distance, worst_position = edge, k
-    return cyclic[worst_position + 1:] + cyclic[:worst_position + 1]
+    Much better than a space-filling-curve order once there are more than a handful
+    of clusters, and the centroid problem is tiny (one point per cluster)."""
+    centroids = np.asarray([coordinates[cluster].mean(axis=0) for cluster in clusters])
+    return two_opt(centroids, nearest_neighbor(centroids))
 
 
-def stitch_greedy_ports(coordinates: np.ndarray, cluster_paths: List[List[int]],
-                        cluster_order: List[int]) -> Tuple[List[int], Set[int]]:
-    """Concatenate cluster paths in order, flipping each to connect at its nearer port.
+def _cut_options(cycle: List[int]) -> List[Tuple[int, int, List[int]]]:
+    """All ways to open a cluster's cyclic sub-tour into a path, as (entry, exit, path).
 
-    Returns (global_tour, seam_edge_positions) where seam positions index the first
-    edge of each junction in the global tour (for seam-restricted cleanup).
-    """
-    coordinates = np.asarray(coordinates, dtype=np.float64)
+    Cutting one edge of the cycle yields a Hamiltonian path through the cluster whose
+    endpoints were joined by that edge; both traversal directions are offered so the
+    stitcher can pick entry/exit freely."""
+    length = len(cycle)
+    if length == 1:
+        return [(cycle[0], cycle[0], [cycle[0]])]
+    options: List[Tuple[int, int, List[int]]] = []
+    for cut in range(length):
+        path = cycle[cut + 1:] + cycle[:cut + 1]
+        options.append((path[0], path[-1], path))
+        options.append((path[-1], path[0], path[::-1]))
+    return options
+
+
+def stitch_dp(coordinates: np.ndarray, cluster_cycles: List[List[int]],
+              cluster_order: List[int]) -> Tuple[List[int], Set[int]]:
+    """Stitch cluster sub-tours into one global tour, choosing where to open each
+    cluster's cycle to MINIMIZE total seam length, given the cluster order.
+
+    DP over the ordered clusters: each cluster contributes O(2k) open-options
+    (entry, exit); the transition cost from cluster i to i+1 is dist(exit_i, entry_{i+1}).
+    Returns (global_tour, seam_edge_positions)."""
+    ordered_cycles = [cluster_cycles[index] for index in cluster_order]
+    options = [_cut_options(cycle) for cycle in ordered_cycles]
+    num_clusters = len(options)
+
+    def gap(a: int, b: int) -> float:
+        return float(np.linalg.norm(coordinates[a] - coordinates[b]))
+
+    cost = [0.0] * len(options[0])
+    backpointer = [[-1] * len(option) for option in options]
+    for i in range(1, num_clusters):
+        next_cost = [float("inf")] * len(options[i])
+        for s2, (entry2, _exit2, _path2) in enumerate(options[i]):
+            best, best_previous = float("inf"), -1
+            for s1, (_entry1, exit1, _path1) in enumerate(options[i - 1]):
+                candidate = cost[s1] + gap(exit1, entry2)
+                if candidate < best:
+                    best, best_previous = candidate, s1
+            next_cost[s2] = best
+            backpointer[i][s2] = best_previous
+        cost = next_cost
+
+    chosen = [0] * num_clusters
+    chosen[-1] = min(range(len(cost)), key=lambda s: cost[s])
+    for i in range(num_clusters - 1, 0, -1):
+        chosen[i - 1] = backpointer[i][chosen[i]]
+
     global_tour: List[int] = []
     seam_positions: Set[int] = set()
-    current_end = None
-    for cluster_index in cluster_order:
-        path = list(cluster_paths[cluster_index])
-        if current_end is not None:
-            distance_to_start = float(np.linalg.norm(coordinates[current_end] - coordinates[path[0]]))
-            distance_to_end = float(np.linalg.norm(coordinates[current_end] - coordinates[path[-1]]))
-            if distance_to_end < distance_to_start:
-                path = path[::-1]
-            seam_positions.add(len(global_tour) - 1)  # first-edge position of the junction
-        global_tour.extend(path)
-        current_end = global_tour[-1]
+    for i in range(num_clusters):
+        if i > 0:
+            seam_positions.add(len(global_tour) - 1)  # first-edge position of this junction
+        global_tour.extend(options[i][chosen[i]][2])
     return global_tour, seam_positions
 
 
@@ -176,21 +201,20 @@ def compose_solve(
     num_cities = len(coordinates)
 
     clusters = partitioner(coordinates, k_cap)
-    cluster_paths: List[List[int]] = []
-    centroids: List[np.ndarray] = []
+    cluster_cycles: List[List[int]] = []
     for cluster in clusters:
         local_order = local_solver(coordinates[cluster])
-        cluster_paths.append(_open_cycle_at_longest_edge(cluster, local_order, coordinates))
-        centroids.append(coordinates[cluster].mean(axis=0))
+        cluster_cycles.append([cluster[i] for i in local_order])
 
-    if len(clusters) > 1:
-        cluster_order = space_filling_curve(np.asarray(centroids))  # TODO: recurse for huge n
+    if len(clusters) == 1:
+        global_tour, seam_positions = list(cluster_cycles[0]), set()
     else:
-        cluster_order = [0]
+        cluster_order = _order_clusters_by_tsp(coordinates, clusters)
+        global_tour, seam_positions = stitch_dp(coordinates, cluster_cycles, cluster_order)
 
-    global_tour, seam_positions = stitch_greedy_ports(coordinates, cluster_paths, cluster_order)
-
-    if cleanup == "seam_2opt":
+    if cleanup == "none":
+        pass
+    elif cleanup == "seam_2opt":
         allowed = _expand_positions(seam_positions, seam_window, num_cities)
         global_tour = two_opt(coordinates, global_tour, allowed_first=allowed)
     elif cleanup == "full_2opt":
