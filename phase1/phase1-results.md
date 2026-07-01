@@ -102,8 +102,8 @@ compose(model, k=10)+neighbor-2opt vs the cheap baseline SFC+neighbor-2opt.
 | 10000 | BHH | SFC+n2o | 16.5 | 0.858 | 0.51 | 60 | | 0.05 ms |
 | 100000 | BHH | compose | 14.1 | 0.877 | 60.1 | 686 | 3.1× | 0.60 ms |
 | 100000 | BHH | SFC+n2o | 15.5 | 0.865 | 19.4 | 224 | | 0.19 ms |
-| 1000000 | BHH | compose | _pending_ | | | | | |
-| 1000000 | BHH | SFC+n2o | _pending_ | | | | | |
+| 1000000 | BHH | compose | 14.0 | 0.877 | 3159.1 | 3600 | 3.0× | 3.16 ms |
+| 1000000 | BHH | SFC+n2o | 15.3 | 0.868 | 1057.8 | 1219 | | 1.06 ms |
 
 ### Patterns
 
@@ -133,11 +133,36 @@ compose(model, k=10)+neighbor-2opt vs the cheap baseline SFC+neighbor-2opt.
 
 ## The million-city run
 
-<!-- BEGIN 1M RESULT (inserted when the run completes) -->
-_Pending — the n=1,000,000 run is still in progress. It is slow for exactly the
-reason in pattern (3): the pure-Python `neighbor_two_opt` cleanup over a million
-cities is super-linear. The construction (the "tiny model solves it" part) is the
-fast part; the classical 2-opt polish is the bottleneck._
+<!-- BEGIN 1M RESULT -->
+The n=1,000,000 run completed (single instance, BHH reference). Full pipeline
+breakdown:
+
+| pipeline | stage | gap | wall | p |
+|---|---|---|---|---|
+| `space_filling` | raw Hilbert, no cleanup | 37.6% | 0.65 s | 0.727 |
+| `compose:model:k10:none` | **construction only** (model + recursion + batched solves + stitch) | 52.2% | **136 s** | 0.657 |
+| `SFC+neighbor2opt` | Hilbert + cleanup | 15.3% | 1058 s | 0.868 |
+| `compose:model:k10:neighbor_2opt` | construction + cleanup | **14.0%** | 3159 s | **0.877** |
+
+**How fast does the tiny model solve a million cities? 2.3 minutes.** The 2.8 MB
+model — recursing ~6 levels deep, never solving more than ~10 cities at once —
+produces a complete, valid million-city tour (`compose:…:none`) in **136 s**. The
+classical `neighbor_2opt` polish that follows drags it from 52% → 14%, but costs
+**~3020 s (50 min) — 96% of the wall.** Construction is 4% of the time; cleanup is
+96%. **The model was never the bottleneck; the 2-opt is.**
+
+Two honest sub-findings the 1M point makes sharp:
+
+- **Raw composition (52.2%) is *worse* than a raw Hilbert curve (37.6%).** Un-cleaned,
+  composition's cluster seams are bad — worse than simply threading a space-filling
+  curve through all million points. Composition's entire value is *post-cleanup*,
+  where it edges SFC (14.0% vs 15.3%; p 0.877 vs 0.868 — the same scale-stable
+  ~+0.01 margin seen at every scale ≥ n=1000).
+- **The cleanup scales as ≈ n^1.72.** Compose's wall rose **52.6×** for 10× the
+  cities (100k → 1M) — steeper than the ~n^1.4 the 10k→100k step implied; the
+  reversal cost compounds as tours grow. This is the entire case for a reversal-free
+  Or-opt / compiled kernel: the fast part (the model) finished in 2 minutes; the
+  slow part is a pure-Python array-reversal 2-opt scaling as n^1.72.
 <!-- END 1M RESULT -->
 
 ---
