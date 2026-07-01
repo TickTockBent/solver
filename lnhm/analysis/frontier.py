@@ -30,23 +30,34 @@ import numpy as np
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
 from data.held_karp import held_karp, tour_distance  # noqa: E402
-from analysis.baselines import lkh_tour, nearest_neighbor, space_filling_curve, two_opt  # noqa: E402
+from analysis.baselines import (lkh_tour, nearest_neighbor, neighbor_two_opt,  # noqa: E402
+                                space_filling_curve, two_opt)
 from analysis.compose import compose_solve, held_karp_solver, make_model_solver  # noqa: E402
 
 Pipeline = Tuple[str, Callable[[np.ndarray], List[int]]]
 
 
-def build_pipelines(k_caps: List[int], model_solver) -> List[Pipeline]:
-    """The pipelines to race. Each maps coordinates -> a tour (cycle)."""
+def build_pipelines(k_caps: List[int], model_solver, scale: bool = False) -> List[Pipeline]:
+    """The pipelines to race. Each maps coordinates -> a tour (cycle).
+
+    scale=True drops the O(n^2) pipelines (full 2-opt, Held-Karp local solves) and
+    keeps only the near-linear ones, for large-n runs."""
     pipelines: List[Pipeline] = [
         ("nearest_neighbor", lambda c: nearest_neighbor(c)),
-        ("NN+2opt", lambda c: two_opt(c, nearest_neighbor(c))),
         ("space_filling", lambda c: space_filling_curve(c)),
-        ("SFC+2opt", lambda c: two_opt(c, space_filling_curve(c))),
+        ("SFC+neighbor2opt", lambda c: neighbor_two_opt(c, space_filling_curve(c))),
     ]
+    if not scale:
+        pipelines += [
+            ("NN+2opt", lambda c: two_opt(c, nearest_neighbor(c))),
+            ("SFC+2opt", lambda c: two_opt(c, space_filling_curve(c))),
+            ("NN+neighbor2opt", lambda c: neighbor_two_opt(c, nearest_neighbor(c))),
+        ]
+    cleanups = ("none", "neighbor_2opt") if scale else ("none", "seam_2opt", "full_2opt", "neighbor_2opt")
+    local_solvers = (("model", model_solver),) if scale else (("model", model_solver), ("hk", held_karp_solver))
     for k in k_caps:
-        for local_name, local_solver in (("model", model_solver), ("hk", held_karp_solver)):
-            for cleanup in ("none", "seam_2opt", "full_2opt"):
+        for local_name, local_solver in local_solvers:
+            for cleanup in cleanups:
                 name = f"compose:{local_name}:k{k}:{cleanup}"
                 pipelines.append(
                     (name, lambda c, s=local_solver, k=k, cl=cleanup:
@@ -72,24 +83,30 @@ def pareto_undominated(rows: List[Dict]) -> None:
 def run(arguments) -> List[Dict]:
     rng = np.random.default_rng(arguments.seed)
     model_solver = make_model_solver(arguments.checkpoint, device=arguments.device)
-    pipelines = build_pipelines(arguments.k_caps, model_solver)
+    pipelines = build_pipelines(arguments.k_caps, model_solver, scale=arguments.scale)
 
     all_rows: List[Dict] = []
     for size in arguments.sizes:
-        print(f"\n### n={size} ({arguments.instances} instances) ###", flush=True)
+        print(f"\n### n={size} ({arguments.instances} instances, ref={arguments.reference}) ###", flush=True)
         instances = [rng.random((size, 2)) for _ in range(arguments.instances)]
 
-        # LKH near-optimal reference per instance.
-        reference_distances, reference_walls = [], []
-        for instance in instances:
-            start = time.perf_counter()
-            reference_tour = lkh_tour(instance, lkh_binary=arguments.lkh_binary)
-            reference_walls.append((time.perf_counter() - start) * 1000)
-            reference_distances.append(tour_distance(instance, reference_tour))
+        if arguments.reference == "bhh":
+            # Beardwood-Halton-Hammersley: expected optimal ~ 0.7124*sqrt(n) in the unit square.
+            bhh_distance = 0.7124 * (size ** 0.5)
+            reference_distances = [bhh_distance] * arguments.instances
+            reference_label, reference_wall = "BHH (0.7124*sqrt(n))", 0.0
+        else:
+            reference_distances, reference_walls = [], []
+            for instance in instances:
+                start = time.perf_counter()
+                reference_tour = lkh_tour(instance, lkh_binary=arguments.lkh_binary)
+                reference_walls.append((time.perf_counter() - start) * 1000)
+                reference_distances.append(tour_distance(instance, reference_tour))
+            reference_label, reference_wall = "LKH (reference)", statistics.mean(reference_walls)
 
         size_rows: List[Dict] = [{
-            "pipeline": "LKH (reference)", "n": size,
-            "mean_gap_pct": 0.0, "mean_wall_ms": statistics.mean(reference_walls),
+            "pipeline": reference_label, "n": size,
+            "mean_gap_pct": 0.0, "mean_wall_ms": reference_wall,
         }]
 
         for name, solve in pipelines:
@@ -121,6 +138,9 @@ def parse_arguments(argv: List[str]) -> argparse.Namespace:
     parser.add_argument("--sizes", type=int, nargs="+", default=[50, 100, 200])
     parser.add_argument("--k-caps", type=int, nargs="+", default=[10])
     parser.add_argument("--instances", type=int, default=5)
+    parser.add_argument("--reference", choices=["lkh", "bhh"], default="lkh",
+                        help="lkh = near-optimal per instance; bhh = 0.7124*sqrt(n) (for huge n).")
+    parser.add_argument("--scale", action="store_true", help="Drop O(n^2) pipelines; keep near-linear only.")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--output-dir", default=os.path.join(PROJECT_ROOT, "runs/phase1"))
     return parser.parse_args(argv)

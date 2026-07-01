@@ -86,34 +86,123 @@ def two_opt(
     return tour
 
 
-def _hilbert_index(side: int, x: int, y: int) -> int:
-    """Distance along a Hilbert curve of side `side` (a power of two) for grid (x, y)."""
-    distance = 0
-    s = side // 2
-    while s > 0:
-        rx = 1 if (x & s) > 0 else 0
-        ry = 1 if (y & s) > 0 else 0
-        distance += s * s * ((3 * rx) ^ ry)
-        if ry == 0:
-            if rx == 1:
-                x = side - 1 - x
-                y = side - 1 - y
-            x, y = y, x
-        s //= 2
-    return distance
-
-
 def space_filling_curve(coordinates: Sequence[Sequence[float]], order: int = 16) -> List[int]:
-    """Order points along a Hilbert curve. Returns the visiting order (a cycle)."""
+    """Order points along a Hilbert curve. Returns the visiting order (a cycle).
+
+    Vectorized over all points (numpy loop over the `order` bit levels), so it
+    scales to millions of points in well under a second."""
     points = np.asarray(coordinates, dtype=np.float64)
     side = 1 << order
     lower = points.min(axis=0)
     upper = points.max(axis=0)
     span = np.where(upper > lower, upper - lower, 1.0)
-    normalized = (points - lower) / span
-    scaled = np.clip((normalized * (side - 1)).round().astype(np.int64), 0, side - 1)
-    hilbert_indices = [_hilbert_index(side, int(px), int(py)) for px, py in scaled]
-    return list(np.argsort(hilbert_indices, kind="stable"))
+    scaled = np.clip(((points - lower) / span * (side - 1)).round().astype(np.int64), 0, side - 1)
+
+    x = scaled[:, 0].copy()
+    y = scaled[:, 1].copy()
+    hilbert = np.zeros(len(points), dtype=np.int64)
+    s = side // 2
+    while s > 0:
+        rx = ((x & s) > 0).astype(np.int64)
+        ry = ((y & s) > 0).astype(np.int64)
+        hilbert += s * s * ((3 * rx) ^ ry)
+        # rotate quadrant: flip where (ry==0 & rx==1), then swap x/y where ry==0
+        flip = (ry == 0) & (rx == 1)
+        x = np.where(flip, side - 1 - x, x)
+        y = np.where(flip, side - 1 - y, y)
+        swap = ry == 0
+        x, y = np.where(swap, y, x), np.where(swap, x, y)
+        s //= 2
+    return list(np.argsort(hilbert, kind="stable"))
+
+
+def _reverse_cyclic(tour: List[int], position: np.ndarray, low: int, high: int, n: int) -> None:
+    """Reverse the cyclic tour segment [low..high] (inclusive, may wrap), updating position."""
+    segment_length = (high - low) % n + 1
+    for step in range(segment_length // 2):
+        p = (low + step) % n
+        q = (high - step) % n
+        tour[p], tour[q] = tour[q], tour[p]
+        position[tour[p]] = p
+        position[tour[q]] = q
+
+
+def neighbor_two_opt(
+    coordinates: Sequence[Sequence[float]],
+    tour: Sequence[int],
+    k_neighbors: int = 8,
+    max_passes: int = 40,
+    time_limit: float = None,
+    neighbor_lists: np.ndarray = None,
+) -> List[int]:
+    """Near-linear 2-opt: each city only considers 2-opt partners among its k spatial
+    nearest neighbors (k-d tree), with don't-look bits and shorter-segment reversal.
+
+    This is the honest cheap-and-good baseline for large TSP (what real solvers use
+    under the hood), and the near-linear cleanup for composition at scale.
+    """
+    from scipy.spatial import cKDTree
+    import time as _time
+
+    coords = np.asarray(coordinates, dtype=np.float64)
+    n = len(tour)
+    tour = list(tour)
+    if n < 4:
+        return tour
+    if neighbor_lists is None:
+        _, neighbor_index = cKDTree(coords).query(coords, k=min(k_neighbors + 1, n), workers=-1)
+        neighbor_lists = np.atleast_2d(neighbor_index)[:, 1:]  # drop self column
+
+    position = np.empty(n, dtype=np.int64)
+    for index, city in enumerate(tour):
+        position[city] = index
+
+    def dist(a: int, b: int) -> float:
+        dx = coords[a, 0] - coords[b, 0]
+        dy = coords[a, 1] - coords[b, 1]
+        return (dx * dx + dy * dy) ** 0.5
+
+    dont_look = np.zeros(n, dtype=bool)
+    started = _time.perf_counter()
+    for _pass in range(max_passes):
+        improved_any = False
+        for a in range(n):
+            if dont_look[a]:
+                continue
+            if time_limit is not None and _time.perf_counter() - started > time_limit:
+                return tour
+            position_a = position[a]
+            improved = False
+            for step in (1, -1):  # break a's successor edge, then its predecessor edge
+                b = tour[(position_a + step) % n]
+                dist_ab = dist(a, b)
+                for c in neighbor_lists[a]:
+                    dist_ac = dist(a, c)
+                    if dist_ac >= dist_ab:
+                        break  # neighbors sorted ascending -> no closer partner remains
+                    position_c = position[c]
+                    d = tour[(position_c + step) % n]
+                    if d == a or c == b:
+                        continue
+                    if dist_ac + dist(b, d) - dist_ab - dist(c, d) < -1e-10:
+                        if step == 1:
+                            i, j = (position_a, position_c) if position_a < position_c else (position_c, position_a)
+                        else:
+                            i, j = (position_a - 1) % n, (position_c - 1) % n
+                            if i > j:
+                                i, j = j, i
+                        _reverse_cyclic(tour, position, i + 1, j, n)
+                        for touched in (a, b, c, d):
+                            dont_look[touched] = False
+                        improved = improved_any = True
+                        break
+                if improved:
+                    break
+            if not improved:
+                dont_look[a] = True
+        if not improved_any:
+            break
+    return tour
 
 
 def lkh_tour(

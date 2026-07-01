@@ -22,7 +22,7 @@ import numpy as np
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
 from data.held_karp import held_karp, tour_distance  # noqa: E402
-from analysis.baselines import nearest_neighbor, space_filling_curve, two_opt  # noqa: E402
+from analysis.baselines import nearest_neighbor, neighbor_two_opt, space_filling_curve, two_opt  # noqa: E402
 
 # A local solver maps cluster coordinates (m, 2) -> a visiting order of 0..m-1.
 LocalSolver = Callable[[np.ndarray], List[int]]
@@ -107,12 +107,16 @@ def partition_median(coordinates: np.ndarray, k_cap: int) -> List[List[int]]:
 # Stitching                                                                    #
 # --------------------------------------------------------------------------- #
 def _order_clusters_by_tsp(coordinates: np.ndarray, clusters: List[List[int]]) -> List[int]:
-    """Visiting order for the clusters = a TSP over their centroids (NN + 2-opt).
+    """Visiting order for the clusters = a TSP over their centroids.
 
-    Much better than a space-filling-curve order once there are more than a handful
-    of clusters, and the centroid problem is tiny (one point per cluster)."""
+    For a moderate number of clusters, NN + full 2-opt (both O(m^2)). Above a
+    threshold (e.g. the ~100k clusters of a million-point instance) that is
+    infeasible, so fall back to the near-linear SFC + neighbor-2-opt ordering."""
     centroids = np.asarray([coordinates[cluster].mean(axis=0) for cluster in clusters])
-    return two_opt(centroids, nearest_neighbor(centroids))
+    num_clusters = len(centroids)
+    if num_clusters <= 2000:
+        return two_opt(centroids, nearest_neighbor(centroids))
+    return neighbor_two_opt(centroids, space_filling_curve(centroids))
 
 
 def _cut_options(cycle: List[int]) -> List[Tuple[int, int, List[int]]]:
@@ -219,6 +223,8 @@ def compose_solve(
         global_tour = two_opt(coordinates, global_tour, allowed_first=allowed)
     elif cleanup == "full_2opt":
         global_tour = two_opt(coordinates, global_tour)
+    elif cleanup == "neighbor_2opt":
+        global_tour = neighbor_two_opt(coordinates, global_tour)
     elif cleanup != "none":
         raise ValueError(f"unknown cleanup mode: {cleanup!r}")
     return global_tour
