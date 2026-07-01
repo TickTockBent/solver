@@ -1,8 +1,8 @@
 # LNHM Phase 0 Technical Specification
 
-**LNHM — Large NP-Hard Model.** A method (a "solver factory") for producing a bespoke neural solver per NP-hard problem class, trained by curriculum bootstrapping from small instances (cheap exact ground truth) toward large ones. The central per-class bet is **scale-unification**: the structural principles that produce good solutions at small n are the same principles at large n, just more constrained — so training on harder instances retroactively improves performance on easier ones.
+**LNHM — Large NP-Hard Model.** A method (a "solver factory") for producing a bespoke neural solver per NP-hard problem class, trained by curriculum bootstrapping from small instances (cheap exact ground truth) toward large ones. The central per-class bet is **scale-unification**: the structural principles that produce good solutions at small n are the same principles at large n, just more constrained, so training on harder instances retroactively improves performance on easier ones.
 
-Phase 0 is the smallest possible test of that bet, on the friendliest possible class: **Euclidean TSP**. It does not aim to produce a good TSP solver. It aims to make one clean measurement — does cross-level reinforcement (backward transfer across instance sizes) exist — in a setting where nothing else confounds it.
+Phase 0 is the smallest possible test of that bet, on the friendliest possible class: **Euclidean TSP**. It does not aim to produce a good TSP solver. It aims to make one measurement, in a setting where nothing else confounds it: does cross-level reinforcement (backward transfer across instance sizes) exist?
 
 > **Why TSP is the right warm-up.** Euclidean TSP is rigged in our favor on every axis: Beardwood–Halton–Hammersley gives theoretical grounds for scale-coherence (optimal tour length through n uniform points → β√n), the solution object is a fixed-shape permutation at every n, and exact ground truth is cheap below n≈20. If cross-level reinforcement does not appear here, it appears nowhere. A positive result here is therefore *necessary but not sufficient* evidence for the wider thesis.
 
@@ -44,15 +44,15 @@ The number of distinct undirected Hamiltonian cycles for n cities is **(n−1)!/
 | 6 | 60 | random-tour baseline ≈ 1.7% |
 | 7 | 360 | random-tour baseline ≈ 0.3% |
 
-**Consequence:** n=3 and n=4 are **warm-up levels only**. They seed the model but carry no measurable signal — you cannot detect a 5pp accuracy gap on a metric that saturates at 100%. All backward-transfer measurement is **anchored at n≥5** (see Cross-Level Reinforcement Test). This corrects the original draft, which anchored the headline experiment and the "33% random baseline" success criterion on n=3.
+n=3 and n=4 are therefore **warm-up levels only**. They seed the model but carry no measurable signal: you cannot detect a 5pp accuracy gap on a metric that saturates at 100%. All backward-transfer measurement is **anchored at n≥5** (see Cross-Level Reinforcement Test). This corrects the original draft, which anchored the headline experiment and the "33% random baseline" success criterion on n=3.
 
 ### Exact Solver
 
 **Use Held–Karp dynamic programming (O(n²·2ⁿ)) as the single solver for all of Phase 0 (n ≤ 12).** It is exact and runs in well under 10 ms per instance through n=12 (n=12: ~12·4096 DP states, single-digit milliseconds; memory O(n·2ⁿ) is trivial). Full enumeration of (n−1)!/2 tours is retained only as an **independent cross-check** on a small sample at n ≤ 8, to validate the Held–Karp implementation.
 
-> **Correction from the original draft.** The original drew the enumeration→Held–Karp line at n=12/13 and estimated ~4 min/instance for n=12 enumeration. At 50,000 instances that is ~3,300 CPU-hours for n=12 alone — the data-generation cost would have dwarfed the entire "weekend of GPU time" training budget. Held–Karp from the start collapses this: the whole Phase 0 dataset generates in **minutes to ~an hour on a single multicore machine**. Enumeration is microseconds-vs-milliseconds slower and only worth keeping as a correctness oracle at tiny n.
+> **Correction from the original draft.** The original drew the enumeration→Held–Karp line at n=12/13 and estimated ~4 min/instance for n=12 enumeration. At 50,000 instances that is ~3,300 CPU-hours for n=12 alone; the data-generation cost would have dwarfed the entire "weekend of GPU time" training budget. Held–Karp from the start collapses this: the whole Phase 0 dataset generates in **minutes to ~an hour on a single multicore machine**. Enumeration is microseconds-vs-milliseconds slower and only worth keeping as a correctness oracle at tiny n.
 
-**Beyond Phase 0 (out of scope here):** n=13–20 still uses Held–Karp (feasible to ~20 nodes with 32GB RAM); n>20 uses Concorde as an exact oracle. The Redis/Kubernetes distributed-generation machinery belongs to **Phase 1+** and is **not required for Phase 0** — Phase 0 needs none of it.
+**Beyond Phase 0 (out of scope here):** n=13–20 still uses Held–Karp (feasible to ~20 nodes with 32GB RAM); n>20 uses Concorde as an exact oracle. The Redis/Kubernetes distributed-generation machinery belongs to **Phase 1+** and is **not required for Phase 0**; Phase 0 needs none of it.
 
 ### Instance Generation Targets (Phase 0: levels 3–12)
 
@@ -69,7 +69,7 @@ The number of distinct undirected Hamiltonian cycles for n cities is **(n−1)!/
 | 11 | 50,000 | 5,000 | ~2 ms |
 | 12 | 50,000 | 5,000 | ~4 ms |
 
-These are starting points. Adjust based on observed generalization — if the model memorizes at a given n, increase instance count. Note that the cross-level control (Model C, below) requires the ability to generate **fresh, unique** instances at the anchor level on demand, so treat the anchor-level generator as a callable, not just a fixed file.
+These are starting points. Adjust based on observed generalization — if the model memorizes at a given n, increase instance count. Note that the cross-level control (Model C, below) requires the ability to generate **fresh, unique** instances at the anchor level on demand, so treat the anchor-level generator as a callable rather than a fixed file.
 
 ### Generation Infrastructure (Phase 0)
 
@@ -79,9 +79,9 @@ Brute force is embarrassingly parallel; each instance is independent.
 
 ### Coordinate Generation
 
-Uniform random in [0, 1]². This is the standard benchmark distribution and the most *stationary* one — the friendliest case for a scale-unification test.
+Uniform random in [0, 1]². This is the standard benchmark distribution and the most stationary one, the friendliest case for a scale-unification test.
 
-> **Distribution caveat (load-bearing for the wider thesis).** A solver is only ever rated *against an assumed input distribution*. Phase 0's uniform-random rating says nothing about robustness to distribution drift (clustered, grid-perturbed, adversarial). Testing non-uniform distributions is a deliberate **Phase 1+** concern; Phase 0 holds distribution fixed so it does not confound the size-transfer measurement.
+> **Distribution caveat (load-bearing for the wider thesis).** A solver is only ever rated against an assumed input distribution. Phase 0's uniform-random rating says nothing about robustness to distribution drift (clustered, grid-perturbed, adversarial). Testing non-uniform distributions is a deliberate **Phase 1+** concern; Phase 0 holds distribution fixed so it does not confound the size-transfer measurement.
 
 ### Storage
 
@@ -108,7 +108,7 @@ Based on the Attention Model (Kool et al. 2019) pattern, simplified.
 - Mask already-visited nodes to −inf before softmax.
 - Output: a permutation of node indices.
 
-> **Where the claim lives.** The decoder is a *routing-specific head* — "select the next city" has no analogue in SAT or graph coloring and will never transfer across problem classes. The transferable, scale-unified structure the LNHM thesis cares about must live in the **encoder's representation**. Phase 0 should therefore interpret a positive cross-level result as *encoder-borne* structural transfer, and the optional localization probe (see Cross-Level Reinforcement Test) exists to confirm that rather than assume it.
+> **Where the claim lives.** The decoder is a routing-specific head: "select the next city" has no analogue in SAT or graph coloring and will never transfer across problem classes. The transferable, scale-unified structure the LNHM thesis cares about must live in the **encoder's representation**. Phase 0 should therefore interpret a positive cross-level result as encoder-borne structural transfer, and the optional localization probe (see Cross-Level Reinforcement Test) exists to confirm that rather than assume it.
 
 **Starting hyperparameters for Phase 0:**
 
@@ -124,7 +124,7 @@ Intentionally small. Phase 0 validates cross-level reinforcement, not solution q
 
 ### Alternative: Graph Neural Network
 
-If the transformer struggles, try a GNN variant (GatedGCN or GraphSAGE) with edge features encoding pairwise distances. Same autoregressive decoder. Don't build both upfront — start with the transformer; switch only if Phase 0 results are ambiguous and architecture might be the confound.
+If the transformer struggles, try a GNN variant (GatedGCN or GraphSAGE) with edge features encoding pairwise distances. Same autoregressive decoder. Don't build both upfront. Start with the transformer; switch only if Phase 0 results are ambiguous and architecture might be the confound.
 
 ---
 
@@ -132,7 +132,7 @@ If the transformer struggles, try a GNN variant (GatedGCN or GraphSAGE) with edg
 
 ### Loss Function
 
-**Supervised (Phase 0):** Cross-entropy between predicted tour probabilities and the (canonicalized) optimal tour at each decoding step. Teacher forcing during training — feed the correct next city at each step, train the model to predict it.
+**Supervised (Phase 0):** Cross-entropy between predicted tour probabilities and the (canonicalized) optimal tour at each decoding step. Teacher forcing during training: feed the correct next city at each step, train the model to predict it.
 
 Optimal tours aren't unique; multiple tours can share the same distance. **Evaluation** accepts any tour within 1% of the known optimum (distance is rotation- and reflection-invariant). **Training** uses the canonical target so the loss doesn't fight itself (next item).
 
@@ -153,7 +153,7 @@ Adam. lr = 1e-4. Cosine annealing with warm restarts, cycle length tuned to curr
 
 Each batch contains instances from multiple levels, mixed per the curriculum schedule. Do **not** segregate batches by level. Batch size: 256–512.
 
-Handle mixed n within a batch by **padding** smaller instances to the batch's max n with dummy nodes masked out in attention. (Separate forward passes per n, aggregating gradients, is the fallback if padding distorts results.) Padding is simpler — start there.
+Handle mixed n within a batch by **padding** smaller instances to the batch's max n with dummy nodes masked out in attention. (Separate forward passes per n, aggregating gradients, is the fallback if padding distorts results.) Padding is simpler; start there.
 
 ### Curriculum Schedule
 
@@ -166,7 +166,7 @@ Handle mixed n within a batch by **padding** smaller instances to the batch's ma
 
 Record validation accuracy on **all** previous levels after every epoch. This is the primary experimental data.
 
-**Graduation threshold:** 50% accuracy on novel instances at the current frontier level (n≥5) before adding the next. Deliberately low — the goal is to detect cross-level reinforcement, not to perfect each level.
+**Graduation threshold:** 50% accuracy on novel instances at the current frontier level (n≥5) before adding the next. Deliberately low: the goal is to detect cross-level reinforcement, not to perfect each level.
 
 **Accuracy definition:** a solution is "correct" if its total tour distance is within 1% of the known optimum. For small n this is nearly exact match but avoids penalizing optimal tours in a different rotation/direction.
 
@@ -199,17 +199,17 @@ For a given anchor a and a curriculum range [3, N] with N strictly greater than 
 
 **Reading the result:**
 - **A > B** alone is weak: B sees a fixed dataset many times and will overfit, so part of A's edge could be mere regularization from data diversity rather than transfer from larger instances.
-- **A > C** is the load-bearing comparison. C already enjoys unlimited same-size diversity, so if A still beats C, the surplus must come from *structure learned at larger n* — genuine cross-level reinforcement. If C closes the gap to A, the effect was diversity/regularization, not size transfer, and that is itself an important (deflationary) finding to record.
+- **A > C** is the load-bearing comparison. C already enjoys unlimited same-size diversity, so if A still beats C, the surplus must come from structure learned at larger n: genuine cross-level reinforcement. If C closes the gap to A, the effect was diversity/regularization, not size transfer; that deflationary finding is worth recording in its own right.
 
 Run for anchors {5, 6, 7} × ranges N ∈ {7, 10, 12}, **≥5 random seeds per configuration**.
 
 **Minimum effect size for "success":** Model A's anchor-level accuracy exceeds **Model C's** by ≥ 5 percentage points, consistent across seeds.
 
-**Optional localization probe (recommended):** to confirm the transfer is *encoder-borne*, take A's trained encoder, freeze it, and train a fresh decoder on anchor level a only; compare against a from-scratch model at a. If the frozen-encoder model wins, the scale-unified structure lives in the representation — the result that matters for the wider thesis — rather than in the routing head.
+**Optional localization probe (recommended):** to confirm the transfer is *encoder-borne*, take A's trained encoder, freeze it, and train a fresh decoder on anchor level a only; compare against a from-scratch model at a. If the frozen-encoder model wins, the scale-unified structure lives in the representation (the result that matters for the wider thesis) rather than in the routing head.
 
 ### Baseline Comparisons (Phase 1+)
 
-At each level with ground truth: nearest-neighbor (greedy), 2-opt, LKH-3 (SOTA heuristic), Concorde (exact). The model needn't beat LKH-3 in Phase 0 — it needs to show cross-level reinforcement. Beating baselines comes later.
+At each level with ground truth: nearest-neighbor (greedy), 2-opt, LKH-3 (SOTA heuristic), Concorde (exact). The model needn't beat LKH-3 in Phase 0; it needs to show cross-level reinforcement. Beating baselines comes later.
 
 ---
 
@@ -344,14 +344,14 @@ Decisions to make during or after Phase 0, not before:
 2. Cross-level reinforcement is absent or inconsistent once the regularization control (C) is accounted for.
 3. Lower-level accuracy degrades as higher levels are added despite mixed training.
 
-If Phase 0 passes, build Phase 1. If it fails, stop — and record *how* it failed; the failure taxonomy across classes is itself a deliverable of the factory program.
+If Phase 0 passes, build Phase 1. If it fails, stop, and record how it failed; the failure taxonomy across classes is itself a deliverable of the factory program.
 
 ---
 
 ## Spec Revision Notes (corrections from the original draft)
 
 1. **Anchor moved off the degenerate floor.** n=3 has exactly one tour (accuracy ≡ 100%), so the original headline test and "33% random baseline" success criterion were unmeasurable there. n=3/4 are now warm-up only; all backward-transfer measurement anchors at n≥5.
-2. **Held–Karp from the start.** The original's enumerate-to-n=12 plan implied ~3,300 CPU-hours for n=12 alone, making data generation — not GPU training — the project bottleneck. Held–Karp (O(n²·2ⁿ)) generates the entire Phase 0 dataset in minutes-to-an-hour on one machine. Distributed/Concorde infrastructure is deferred to Phase 1+.
+2. **Held–Karp from the start.** The original's enumerate-to-n=12 plan implied ~3,300 CPU-hours for n=12 alone, making data generation, not GPU training, the project bottleneck. Held–Karp (O(n²·2ⁿ)) generates the entire Phase 0 dataset in minutes-to-an-hour on one machine. Distributed/Concorde infrastructure is deferred to Phase 1+.
 3. **A/B confound closed with a third model.** The compute-matched single-level control (Model B) overfits its fixed dataset, so A>B could be mere regularization. Added **Model C** (single-level, unlimited fresh data); the success metric is now **A − C ≥ 5pp**, which isolates genuine size-transfer from data-diversity effects.
 4. **Target canonicalization.** Teacher-forcing loss is computed against canonicalized tours (fixed start city 0, fixed direction) so the supervised signal doesn't penalize valid rotations/reflections of the optimal cycle.
 5. **Encoder-localization probe added.** Because only encoder-borne structure can generalize toward the wider LNHM thesis, an optional frozen-encoder probe confirms the transfer lives in the representation, not the routing-specific decoder head.

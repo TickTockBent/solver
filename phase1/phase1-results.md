@@ -7,26 +7,26 @@
 Phase 0 established that a tiny transformer (710K params, ~2.8 MB) learns TSP and
 shows a modest, real cross-level transfer effect. Phase 1 asked the question the
 application vision rests on: **can that small model solve *large* instances by
-composition — decompose into small clusters, solve each, stitch — and is the
+composition (decompose into small clusters, solve each, stitch), and is the
 result competitive on the cost/quality frontier?**
 
-## The honest headline
+## The result
 
-**The mechanism works; the economics don't — yet, and not on this problem.**
+**The mechanism works; the economics don't (yet, and not on this problem).**
 
-- A model trained only on n≤12 produces coherent tours at **n = 1,000,000** — a
-  thousandfold beyond its training range — because it never solves anything bigger
+- A model trained only on n≤12 produces coherent tours at **n = 1,000,000**, a
+  thousandfold beyond its training range, because it never solves anything bigger
   than ~10 cities; the recursion does the rest. That is a real mechanism result.
 - But on **static uniform Euclidean TSP**, the composition pipeline is **not near
   the classical frontier**: it lands at ~12–14% over optimal where a well-built
-  near-linear classical solver reaches ~5%, and it costs *more*, not less. The
+  near-linear classical solver reaches ~5%, and it costs more. The
   learned model does not earn its compute on this problem.
 - Composition does beat the cheap space-filling-curve baseline, but only **above a
   measured crossover at ≈ n=1000**, and only by a small, stable margin.
 
 The value case for the learned approach is the **dynamic / constrained** axis
 (re-solve one cluster on a change; generalize across problem variants), which
-Phase 1 did **not** measure. On the axis we *did* measure, classical wins.
+Phase 1 did not measure. On the axis we did measure, classical wins.
 
 ---
 
@@ -52,15 +52,15 @@ Compute normalized by quality, so a method that is fast *but bad* gets no credit
 **Lower is better.** Reported as a ratio to the frontier, it is the compute-
 efficiency distance.
 
-**Basis: CPU core-seconds, not wall-clock.** f is a *cost* metric — the compute
-actually consumed (`time.process_time()`, summed across all threads of the process)
-— so a background task stealing the CPU cannot corrupt it, and parallel work is
+**Basis: CPU core-seconds, not wall-clock.** f is a cost metric: the compute
+actually consumed (`time.process_time()`, summed across all threads of the process).
+A background task stealing the CPU cannot corrupt it, and parallel work is
 charged for every core it uses. Wall-clock (latency) is reported alongside but does
-not feed f: it is contention-sensitive and *hides* parallelism (a 4-core burst
-looks 4× cheaper than it is). The two diverge exactly where our pipeline fans out —
+not feed f: it is contention-sensitive and hides parallelism (a 4-core burst
+looks 4× cheaper than it is). The two diverge exactly where our pipeline fans out:
 the torch model construction and the k-d-tree query use all cores, so their
 cpu-seconds exceed their wall-seconds; the single-threaded local-search cleanup has
-cpu ≈ wall. (Caveat: LKH is a subprocess and is *not* counted — fine, since it is
+cpu ≈ wall. (Caveat: LKH is a subprocess and is not counted; fine, since it is
 only ever the untimed reference, never a timed method.)
 
 _Historical note: the two tables above (the original p/f sweep and the million-city
@@ -79,7 +79,7 @@ below uses the corrected cpu-seconds basis and reports both columns._
 
 ---
 
-## Building the method: the cost-engineering journey
+## Building the method: cost engineering
 
 Composition = **partition → local-solve → stitch → cleanup**, applied recursively.
 Getting it to near-linear took two structural fixes; neither touched the model.
@@ -94,8 +94,8 @@ Measured at **n=10000, compose(model, k=10) + neighbor-2opt**:
 - **Recursion:** the centroid TSP is the same problem one level up, so ordering
   clusters is done by composition itself (`log_k(n)` depth, O(n) work) instead of
   a flat O(m²) solve. This was the super-linear blow-up.
-- **Batching:** clusters within a level are independent — the parallel "batch
-  dimension" (as in an LLM). One padded forward pass replaces a Python loop of
+- **Batching:** clusters within a level are independent (the parallel "batch
+  dimension", as in an LLM). One padded forward pass replaces a Python loop of
   single solves. Quality is identical; cost dropped 6.0 s → 2.1 s.
 
 Both fixes came from reading the structure, not the model. 17 s → 2.1 s, quality
@@ -124,24 +124,24 @@ compose(model, k=10)+neighbor-2opt vs the cheap baseline SFC+neighbor-2opt.
 
 ### Patterns
 
-1. **Quality crossover at ≈ n=1000, then a *stable* edge.** Composition's advantage
+1. **Quality crossover at ≈ n=1000, then a stable edge.** Composition's advantage
    `Δp = p_compose − p_SFC` goes −0.035 (n=100) → +0.008 (n=1000) → +0.016 (n=10k)
    → +0.012 (n=100k). It rises through the crossover and **plateaus at ~+0.013**.
    Composition's `p` is scale-invariant (~0.877 flat); the SFC baseline's `p`
-   *erodes* (0.912 → 0.865). **Composition's product is scale-stability**, not
-   raw quality — a space-filling-curve tour degrades as the problem grows; a
+   erodes (0.912 → 0.865). **Composition's product is scale-stability**, not
+   raw quality: a space-filling-curve tour degrades as the problem grows; a
    recursive-composition tour holds. Below the crossover, composition is strictly
-   worse (worse quality *and* worse compute).
+   worse (worse quality and worse compute).
 
 2. **Compute penalty amortizes and stabilizes: 93× → 22× → 4× → 3×.** Composition
    carries a fat fixed overhead (torch + k-d-tree, ~0.3 s) that dominates at small
    n and washes out by n≥10k, settling at ~3× the cheap baseline.
 
-3. **`compute/city` is U-shaped — the cleanup is super-linear.** It bottoms out at
-   **n≈10k** (0.21 ms/city) then *rises* to 0.6 ms/city at 100k. Going 10k→100k
+3. **`compute/city` is U-shaped: the cleanup is super-linear.** It bottoms out at
+   **n≈10k** (0.21 ms/city) then rises to 0.6 ms/city at 100k. Going 10k→100k
    (10× cities), compose's wall went 2.1 s → 60 s (**28×, not 10×**). The
-   *construction* (partition + recursive batched solves + stitch) is near-linear;
-   the **`neighbor_two_opt` cleanup is not** — pure-Python 2-opt with array
+   construction (partition + recursive batched solves + stitch) is near-linear;
+   the **`neighbor_two_opt` cleanup is not**: pure-Python 2-opt with array
    segment-reversals is super-linear because reversal length grows with n. This is
    an implementation wall (an Or-opt / linked-list 2-opt would restore near-
    linearity), not a fundamental one.
@@ -161,22 +161,21 @@ breakdown:
 | `SFC+neighbor2opt` | Hilbert + cleanup | 15.3% | 1058 s | 0.868 |
 | `compose:model:k10:neighbor_2opt` | construction + cleanup | **14.0%** | 3159 s | **0.877** |
 
-**How fast does the tiny model solve a million cities? 2.3 minutes.** The 2.8 MB
-model — recursing ~6 levels deep, never solving more than ~10 cities at once —
+**The tiny model solves a million cities in 2.3 minutes.** The 2.8 MB
+model, recursing ~6 levels deep and never solving more than ~10 cities at once,
 produces a complete, valid million-city tour (`compose:…:none`) in **136 s**. The
 classical `neighbor_2opt` polish that follows drags it from 52% → 14%, but costs
-**~3020 s (50 min) — 96% of the wall.** Construction is 4% of the time; cleanup is
+**~3020 s (50 min), 96% of the wall.** Construction is 4% of the time; cleanup is
 96%. **The model was never the bottleneck; the 2-opt is.**
 
-Two honest sub-findings the 1M point makes sharp:
+Two sub-findings the 1M point sharpens:
 
-- **Raw composition (52.2%) is *worse* than a raw Hilbert curve (37.6%).** Un-cleaned,
-  composition's cluster seams are bad — worse than simply threading a space-filling
-  curve through all million points. Composition's entire value is *post-cleanup*,
-  where it edges SFC (14.0% vs 15.3%; p 0.877 vs 0.868 — the same scale-stable
+- **Raw composition (52.2%) is worse than a raw Hilbert curve (37.6%).** Un-cleaned,
+  the cluster seams are bad. Composition's entire value is post-cleanup,
+  where it edges SFC (14.0% vs 15.3%; p 0.877 vs 0.868, the same scale-stable
   ~+0.01 margin seen at every scale ≥ n=1000).
 - **The cleanup scales as ≈ n^1.72.** Compose's wall rose **52.6×** for 10× the
-  cities (100k → 1M) — steeper than the ~n^1.4 the 10k→100k step implied; the
+  cities (100k → 1M), steeper than the ~n^1.4 the 10k→100k step implied; the
   reversal cost compounds as tours grow. This is the entire case for a reversal-free
   Or-opt / compiled kernel: the fast part (the model) finished in 2 minutes; the
   slow part is a pure-Python array-reversal 2-opt scaling as n^1.72.
@@ -184,21 +183,21 @@ Two honest sub-findings the 1M point makes sharp:
 
 ---
 
-## Distance from the frontier — the ruler
+## Distance from the frontier
 
 On static uniform Euclidean TSP:
 
 - **p ≈ 0.88; the reachable near-linear frontier is ~0.95** (LKH-class ~0.995).
-  That's ~2.5–3× too much slack (14% vs ~5% gap) — a real, *engineering* gap, and
-  notably **not one the model closes** (the k-cap sweep showed final quality is set
+  That's ~2.5–3× too much slack (14% vs ~5% gap): a real engineering gap, and
+  not one the model closes (the k-cap sweep showed final quality is set
   by the cleanup, not the local solver or cluster size).
 - **f ≈ 150× off the frontier.** Decomposed: **~40× is pure Python→C** (same
-  algorithm, terrible constants — recoverable with a numba/C kernel), and **~4× is
+  algorithm, terrible constants; recoverable with a numba/C kernel), and **~4× is
   the model + composition overhead failing to buy proportional accuracy** on this
   problem.
 
 **On this problem, a good classical near-linear solver dominates our stack on both
-axes, and the learned model is a net negative on `f`.** That is the honest result.
+axes, and the learned model is a net negative on `f`.**
 
 ---
 
@@ -217,7 +216,7 @@ axes, and the learned model is a net negative on `f`.** That is the honest resul
 
 ## What Phase 1 did NOT test (and where the case actually lives)
 
-- **Dynamic re-optimization** — re-solve one affected cluster on a change while
+- **Dynamic re-optimization**: re-solve one affected cluster on a change while
   classical methods recompute from scratch. This is where `f` should invert in our
   favor, and it is the next experiment.
 - **Constrained / non-Euclidean variants** (time windows, asymmetric cost matrices)
@@ -226,8 +225,8 @@ axes, and the learned model is a net negative on `f`.** That is the honest resul
 
 ## Immediate next steps
 
-- ~~Reversal-free cleanup~~ **DONE** — see "Kernel rewrite" below.
-- **The dynamic experiment** — the frontier that this approach is actually built for.
+- ~~Reversal-free cleanup~~ **DONE** (see "Kernel rewrite" below).
+- **The dynamic experiment**: the frontier that this approach is actually built for.
 
 ---
 
@@ -238,10 +237,10 @@ constant** (pure Python vs compiled) and a **super-linear scaling** (~n^1.72, fr
 array-reversal 2-opt). `lnhm/analysis/fast_local_search.py` addresses both:
 
 - **Compiled 2-opt** (numba `@njit`): the same neighbor-list 2-opt with don't-look
-  bits and shorter-segment reversal — kills the ~40× interpreter constant.
+  bits and shorter-segment reversal; kills the ~40× interpreter constant.
 - **Reversal-free Or-opt** (doubly-linked list): relocates runs of 1–3 cities next
-  to a spatial neighbor with O(1) relinking and **no segment reversal** — near-linear,
-  and it finds improving moves plain 2-opt cannot, which *lifts quality*.
+  to a spatial neighbor with O(1) relinking and no segment reversal; near-linear,
+  and it finds improving moves plain 2-opt cannot, which lifts quality.
 
 The two alternate to a joint local optimum. Wired into `compose_solve` as
 `cleanup="fast_local"`.
@@ -274,36 +273,36 @@ timed separately.
 | 1000000 | BHH | SFC+fast | 7.8 | 0.928 | 27.71 | 25.80 | 30 |
 
 (1M `cmp+fast` split: construction cpu 225 s / wall 147 s; **cleanup cpu 54 s /
-wall 52 s** — versus the old pure-Python cleanup's ~3020 s. The million-city polish
+wall 52 s**, versus the old pure-Python cleanup's ~3020 s. The million-city polish
 went from ~50 min to ~52 s, ~58×.)
 
 ### What the rewrite bought
 
 1. **Quality (p) jumped ~0.88 → 0.93–0.94 at scale, and to near-optimal at small n**
    (p 1.000 at n=10, 0.980 at n=100). The gap roughly **halved** at every scale
-   (100k: 14.1% → 7.2%). The Or-opt moves are the lift — this is the ~5–8% regime a
+   (100k: 14.1% → 7.2%). The Or-opt moves are the lift: this is the ~5–8% regime a
    good classical local search reaches, up from the old ~13–15%.
 2. **The cleanup stopped being the bottleneck.** At 100k the fast cleanup is
-   **0.8 cpu-s vs the old ~60 s** (~75×) *at better quality*. The super-linear
+   **0.8 cpu-s vs the old ~60 s** (~75×) at better quality. The super-linear
    50-minute million-city polish is gone (see 1M rows).
 3. **The model construction is now the dominant cost.** At 100k, `cmp+fast` spends
-   22.4 cpu-s in construction and 0.8 in cleanup — construction is ~96% of compute.
+   22.4 cpu-s in construction and 0.8 in cleanup; construction is ~96% of compute.
 
-### What the rewrite sharpened (honest)
+### What the rewrite sharpened
 
-- **On static TSP the verdict got *stronger*, not weaker.** With a good cleanup,
-  `cmp+fast` (p 0.933) beats `SFC+fast` (p 0.923) by the same scale-stable ~+0.01 —
+- **On static TSP the verdict got stronger, not weaker.** With a good cleanup,
+  `cmp+fast` (p 0.933) beats `SFC+fast` (p 0.923) by the same scale-stable ~+0.01,
   but now costs **~40× more on the cpu basis at 100k (f 249 vs 6), ~10× at 1M
-  (298 vs 30)** — the penalty shrinks as construction amortizes, but `SFC+fast`
+  (298 vs 30)**. The penalty shrinks as construction amortizes, but `SFC+fast`
   dominates at every scale, because the cleanup no longer equalizes them and the
   model construction's parallel cost is now fully charged. The learned model still
   does not earn its keep on static uniform TSP.
 - **Residual super-linearity.** The 2-opt half still uses array reversals, so it is
-  ~40× cheaper but *still* super-linear; Or-opt is the near-linear part. Fully
-  flattening 2-opt needs a two-level doubly-linked list (O(√n) moves) — a further
-  step, not required at these scales.
+  ~40× cheaper but still super-linear; Or-opt is the near-linear part. Fully
+  flattening 2-opt needs a two-level doubly-linked list (O(√n) moves), a further
+  step not required at these scales.
 - **We approach but do not reach the ~0.95 frontier** (p ~0.93, gap 7–8% at scale).
-  Closing the rest needs more neighbors (k) or Or-3opt — diminishing returns.
+  Closing the rest needs more neighbors (k) or Or-3opt; diminishing returns.
 
 ### Before → after (quality, p)
 

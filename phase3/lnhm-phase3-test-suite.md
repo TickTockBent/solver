@@ -29,10 +29,10 @@ once T5 data exists). Report final p and f for each row, plus raw pre-cleanup ga
 
 **Pre-registered verdict:**
 - If p(model) − p(NN) < 0.005 after cleanup → **the model is inert in static
-  composition.** The static pipeline is clustering + cleanup, full stop. Retire
+  composition.** The static pipeline is clustering + cleanup. Retire
   the claim that the model earns anything here.
 - Where the model lands on the NN↔HK span measures how much of the available
-  local-quality headroom it captures — and whether cleanup erases it anyway.
+  local-quality headroom it captures, and whether cleanup erases it anyway.
 - The k-sweep already hints the answer is "inert." Confirm or refute directly.
 
 **Cost:** ~1–2 hours. Run first.
@@ -41,8 +41,8 @@ once T5 data exists). Report final p and f for each row, plus raw pre-cleanup ga
 
 ## T2 — Greedy decode table (prediction vs search)
 
-**Question:** How much of the Phase 2 depth extrapolation is the *model* versus
-best-of-16 *sampling*? Best-of-16 is search; the headline claim is about
+**Question:** How much of the Phase 2 depth extrapolation is the model versus
+best-of-16 sampling? Best-of-16 is search; the headline claim is about
 prediction.
 
 **Method:**
@@ -78,7 +78,7 @@ cpu-seconds for:
 - NN + fast_local (Or-opt included)
 - LKH (reference, untimed)
 
-Model rows charge amortized load cost honestly (note it separately — it matters
+Model rows charge amortized load cost (note it separately; it matters
 for cold-start phone deployment, not for a resident service).
 
 **Pre-registered verdict:** The one-shot product claim survives only if a model
@@ -93,7 +93,7 @@ cost, the claim retires to "competitive but not differentiated."
 
 **Question:** Does "train to N → near-frontier to ~1.5N" hold as N grows?
 Multiplicative or additive? Where does it break? This is the single most
-factory-relevant experiment available: if a stable law exists, it *is* the
+factory-relevant experiment available: if a stable law exists, it is the
 provisioning function.
 
 **Method:**
@@ -103,9 +103,9 @@ provisioning function.
 - Define extrapolation reach **R(N) = max n such that p ≥ 0.95** (greedy basis;
   report sampled basis alongside).
 - Fit both candidate laws and distinguish:
-  - **Multiplicative:** R(N) ≈ c·N — factory implication: training cost to cover
+  - **Multiplicative:** R(N) ≈ c·N. Factory implication: training cost to cover
     any target n is log-bounded via bootstrapped curricula.
-  - **Additive:** R(N) ≈ N + c — depth is a fixed bonus; coverage of large n
+  - **Additive:** R(N) ≈ N + c. Depth is a fixed bonus; coverage of large n
     still requires training near it.
 
 **Pre-registered verdict:** Whichever law fits with lower residuals across ≥4
@@ -116,7 +116,7 @@ is dead and depth is characterized empirically per-ceiling instead.
 
 ---
 
-## T5 — Distribution robustness matrix (in flight — formalize it)
+## T5 — Distribution robustness matrix (in flight; formalize it)
 
 **Status:** Already discovered the uniform-only blind spot; mixed retraining in
 progress. Formalize so the result is a matrix, not an anecdote.
@@ -124,17 +124,17 @@ progress. Formalize so the result is a matrix, not an anecdote.
 **Method:**
 - Train distributions: {uniform, clustered (Gaussian blobs, varied σ and count),
   mixed 50/25/25 uniform/clustered/bounded-random}.
-- Eval distributions: all three **plus** two held-out: grid-perturbed, and small
+- Eval distributions: all three plus two held-out: grid-perturbed, and small
   TSPLIB instances (free real-world-ish geometry).
 - Report the full train×eval p matrix, greedy basis, at n ∈ {10, 20, 30}.
 
 **Two pre-registered questions:**
 1. **Interference cost:** does mixed training lose anything on uniform vs the
-   uniform specialist? If Δp < 0.005, distribution robustness is free — make
+   uniform specialist? If Δp < 0.005, distribution robustness is free; make
    mixed the default forever.
-2. **Fixed-k damage on realistic geometry:** run the *current* composition stack
+2. **Fixed-k damage on realistic geometry:** run the current composition stack
    (fixed k=10) on clustered instances vs uniform at n ∈ {10k, 100k}. This
-   measures what fixed-k actually loses on globby data **before** building
+   measures what fixed-k actually loses on globby data before building
    elastic-k. If the loss is < 1pp of p, elastic-k isn't justified yet; if it's
    large, the elastic-k build is motivated by data instead of intuition.
 
@@ -142,10 +142,10 @@ progress. Formalize so the result is a matrix, not an anecdote.
 
 ---
 
-## T6 — Dynamic re-optimization vs the STRONG baseline (pre-registered)
+## T6 — Dynamic re-optimization vs the strong baseline (pre-registered)
 
 **The stacked-deck warning, made binding:** classical does not recompute from
-scratch. Dynamic VRP's standard move is *incremental repair* — cheapest
+scratch. Dynamic VRP's standard move is incremental repair: cheapest
 insertion of the changed point plus localized Or-opt/2-opt around the change.
 With our own compiled kernel that repair is nearly free. Beating a from-scratch
 strawman means nothing.
@@ -159,20 +159,20 @@ strawman means nothing.
 - Methods:
   - (a) **model cluster re-solve:** re-solve affected cluster(s) + seam repair
   - (b) **classical incremental repair:** cheapest insertion + localized
-    fast_local around the change (STRONG baseline)
+    fast_local around the change (the strong baseline)
   - (c) full SFC+fast re-solve per mutation (naive baseline, for scale)
   - (d) hybrid: (b) per mutation + periodic full re-solve every 50 mutations
 - Measure: per-update cpu-seconds (distribution, not just mean), steady-state p
   after M mutations (reference: LKH re-solve of the final instance), and quality
   drift curve over the stream.
 
-**Pre-registered verdict:** The model approach must beat **(b)** — not (c) — on
+**Pre-registered verdict:** The model approach must beat **(b)**, not (c), on
 the p-vs-per-update-cost frontier, or match its frontier position with a
 meaningfully better drift curve. If it cannot, the dynamic case on Euclidean
 instances is dead, stated plainly, and the economic argument moves entirely to
 T7.
 
-**Honest prior, stated up front:** (b) is very hard to beat. Design accordingly.
+**Prior, stated up front:** (b) is very hard to beat. Design accordingly.
 
 **Cost:** The harness is the work (~a day). Runs are fast.
 
@@ -180,18 +180,18 @@ T7.
 
 ## T7 — Constrained variant transfer (the moat hypothesis) — design sketch
 
-**The actual bet the factory thesis lives or dies on.** Classical local search
+The actual bet the factory thesis lives or dies on. Classical local search
 dominates Euclidean TSP because fifty years of moves exploit metric geometry.
 Break the geometry and every classical baseline needs re-engineering per
 variant; a learned model with edge features might transfer with retraining
 only.
 
-**Prerequisite build:** edge-feature model — input is a distance *matrix* (or
+**Prerequisite build:** edge-feature model: input is a distance matrix (or
 edge feature tensor), not coordinates. This is the deferred Phase 1 item and is
 now the critical path.
 
 **First variant: asymmetric TSP** (d(i,j) ≠ d(j,i), random asymmetry factor).
-Chosen because it breaks 2-opt directly — segment reversal changes tour cost
+Chosen because it breaks 2-opt directly: segment reversal changes tour cost
 asymmetrically, so the workhorse classical move stops being valid as-is. This is
 the cleanest test of "variant robustness is where learning wins."
 
@@ -199,9 +199,9 @@ the cleanest test of "variant robustness is where learning wins."
 - Train edge-feature model on symmetric Euclidean; fine-tune on asymmetric
   (measure fine-tune cost).
 - Classical baselines: NN + asymmetric-safe local search (Or-opt still works;
-  2-opt needs the directed variant — implement honestly, this is the
+  2-opt needs the directed variant. Implement it properly: this is the
   re-engineering cost being measured).
-- Compare: p, f, **and engineering-hours per variant** — the third column is
+- Compare: p, f, and engineering-hours per variant; the third column is
   the moat metric.
 
 Second variant candidates, in order: time windows, capacitated clusters,
@@ -228,8 +228,8 @@ for deep curricula (T4) drops proportionally. Attach to any retraining run.
 | T6 | can't beat incremental repair | dynamic case on Euclidean |
 | T7 | no transfer advantage | **the factory thesis itself** |
 
-Note what does NOT die in any single failure: the methodology, the p/f ruler,
-the depth-extrapolation finding as science, and the compiled-kernel work — those
-stand regardless. But if T1, T6, and T7 all fail, the honest conclusion is that
-this was a first-rate measurement project about where learned solvers *don't*
-help, and that conclusion gets written up with the same rigor as a win.
+Note what does not die in any single failure: the methodology, the p/f ruler,
+the depth-extrapolation finding as science, and the compiled-kernel work; those
+stand regardless. But if T1, T6, and T7 all fail, the conclusion is that
+this was a first-rate measurement project about where learned solvers don't
+help, and it gets written up with the same rigor as a win.

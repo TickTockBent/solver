@@ -7,7 +7,7 @@ exactly-solvable instances toward large ones. The central per-class bet is
 small n are the same at large n, so training on harder instances retroactively
 improves performance on easier ones (cross-level reinforcement).
 
-Phase 0 tests the smallest version of that bet on the friendliest class —
+Phase 0 tests the smallest version of that bet on the friendliest class,
 **Euclidean TSP**. The full specification is in
 [`../phase0/phase0-spec.md`](../phase0/phase0-spec.md).
 
