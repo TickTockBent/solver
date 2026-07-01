@@ -269,7 +269,30 @@ Honest restatement: depth's one-shot prediction advantage at n=30 is **+0.051, n
 Both models degrade gracefully in prediction; depth degrades more gracefully AND keeps a
 usable sampling distribution where the control loses one — a real but separate property from
 prediction quality. Data inert and interaction ≈ 0 on greedy too (robust to decode mode).
-Part 2 (best-of-k curve at n=25/30, k∈{1,2,4,8,16}) pending on the GPU box.
+
+### T2 (part 2) — best-of-k curve (depth model C10 s0, 1000 instances)
+
+Sampled p as a function of decode budget k, with the greedy (one-shot) baseline:
+
+| n | greedy | k=1 | k=2 | k=4 | k=8 | k=16 |
+|---|---|---|---|---|---|---|
+| 25 | **0.970** | 0.936 | 0.960 | 0.974 | 0.982 | 0.988 |
+| 30 | **0.958** | 0.914 | 0.940 | 0.957 | 0.967 | 0.977 |
+
+Two findings, both favouring the prediction framing:
+
+1. **Search starts underwater.** A single sample is *worse* than greedy (n=30: k=1 = 0.914
+   vs 0.958). Sampling doesn't break even with the greedy argmax until **k≈4** (n=25 crosses
+   ~k=3, n=30 ~k=4). For k=1–2, one-shot beats search.
+2. **Above break-even the climb is shallow and unsaturated.** Marginal gain per doubling at
+   n=30: +0.026 (1→2), +0.017 (2→4), +0.010 (4→8), +0.010 (8→16). Best-of-16 adds only
+   **+0.019** over greedy and is still rising at k=16 — a slow grind, not a cliff.
+
+**T2 complete:** extrapolation is overwhelmingly model-borne. Greedy gives 0.958 at n=30 in
+one pass; search buys ~+0.02 more but only after ≥4 passes clear the break-even and 16 passes
+to bank the full headline. Honest product line: **one-shot ≈ 0.958 at n=30; the 0.977 sampled
+headline is a 16× compute premium for ~2pp** — exactly the latency caveat the pre-registration
+flagged.
 
 ## Runnable-vs-remote status
 
@@ -296,5 +319,7 @@ Part 2 (best-of-k curve at n=25/30, k∈{1,2,4,8,16}) pending on the GPU box.
   Supersedes the Test-2 recommendation to build the clustered-globals A/B.
 - 2026-07-01: T2 part 1 (greedy table) complete. Depth greedy n=30 = 0.957 ≥ 0.94 → PASSES;
   extrapolation is model-borne. But sampled overstated depth's advantage ~3.5× (control's
-  sampled collapse was a best-of-16 artifact); true prediction edge at n=30 is +0.051. Part 2
-  (best-of-k curve) pending.
+  sampled collapse was a best-of-16 artifact); true prediction edge at n=30 is +0.051.
+- 2026-07-01: T2 part 2 (best-of-k curve) complete. Search starts underwater (k=1 < greedy),
+  breaks even at k≈4, and best-of-16 adds only +0.019 over greedy at n=30 (still rising).
+  Extrapolation is model-borne; the sampled headline is a 16× compute premium for ~2pp. T2 closed.
