@@ -34,6 +34,45 @@ def held_karp_solver(cluster_coordinates: np.ndarray) -> List[int]:
     return tour
 
 
+def make_model_solver(checkpoint_path: str, model_config: dict = None, device: str = "cpu") -> LocalSolver:
+    """Build a LocalSolver backed by a trained LNHM model (greedy decode).
+
+    Each cluster is normalized into [0,1]^2 by a UNIFORM scale + translate before
+    the model sees it: the model was trained on [0,1]^2 instances, and uniform
+    similarity transforms preserve the optimal tour order (anisotropic stretch
+    would NOT -- it distorts distances and can change the tour).
+    """
+    import torch  # lazy: keeps the Held-Karp path torch-free
+    import yaml
+    from model.lnhm import LnhmModel
+
+    if model_config is None:
+        with open(os.path.join(PROJECT_ROOT, "configs/phase0.yaml")) as config_file:
+            model_config = yaml.safe_load(config_file)["model"]
+
+    torch_device = torch.device(device)
+    model = LnhmModel.from_config(model_config)
+    model.load_state_dict(torch.load(checkpoint_path, map_location=torch_device))
+    model.to(torch_device).eval()
+
+    def solve(cluster_coordinates: np.ndarray) -> List[int]:
+        points = np.asarray(cluster_coordinates, dtype=np.float64)
+        num_points = len(points)
+        if num_points <= 3:
+            return list(range(num_points))  # any order is optimal for n<=3
+        lower = points.min(axis=0)
+        span = float((points.max(axis=0) - lower).max())
+        if span < 1e-12:
+            return list(range(num_points))
+        normalized = (points - lower) / span  # uniform scale + translate
+        batch = torch.tensor(normalized, dtype=torch.float32, device=torch_device).unsqueeze(0)
+        with torch.no_grad():
+            tour, _ = model.solve(batch, mode="greedy")
+        return tour[0].tolist()
+
+    return solve
+
+
 # --------------------------------------------------------------------------- #
 # Partitioners: return a list of clusters, each a list of global point indices  #
 # (together a partition of range(n)).                                           #
